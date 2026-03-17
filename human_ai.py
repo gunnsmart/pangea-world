@@ -1,59 +1,40 @@
 import random
+import numpy as np
 from datetime import datetime
 
 class HumanAI:
-    def __init__(self, name, partner_name):
+    def __init__(self, name, height, mass, partner_name):
         self.name = name
         self.partner_name = partner_name
-        self.energy = 800.0   
-        self.entropy = 0.0    
-        self.toxin = 5.0      
-        self.libido = 20.0    
-        self.pos = [random.randint(6,8), random.randint(6,8)] # เริ่มต้นใกล้กัน
-        self.action = "มองหาคู่"
-
-    def process_life(self, elevation, partner_pos):
-        hour = datetime.now().hour
+        self.height = height # m
+        self.mass = mass     # kg
+        self.birth_time = datetime.now()
         
-        # Thermodynamics: เผาผลาญพลังงาน
-        metabolism = 0.005 if (22 <= hour or hour < 5) else 0.015
-        self.energy -= metabolism * (elevation + 1)
+        # --- Stats (1:1 Real-time Scale) ---
+        self.u_energy = 800.0  # พลังงานภายใน
+        self.entropy = 0.0     # เอนโทรปี/ความเสื่อม
+        self.toxin = 0.0       # ของเสีย
+        self.libido = 20.0     # ความต้องการสืบพันธุ์
+        self.pos = [7, 7]
+        self.status = "ปกติ"
+
+    def update_physics(self, elevation):
+        # Thermodynamics: เผาผลาญตามมวลและพื้นที่ (W = F * d)
+        work = 0.005 * (self.mass / 70.0) * (elevation + 1)
+        self.u_energy -= work
         self.entropy += 0.0001
-        self.toxin += 0.001
-        self.libido += 0.002
+        self.toxin += 0.0005
+        self.libido += 0.001
+        
+        # Aging & BMI
+        days = (datetime.now() - self.birth_time).total_seconds() / 86400
+        self.age = 25.0 + (days / 365.25)
+        self.bmi = self.mass / (self.height ** 2)
 
-        # --- ตรรกะการอยู่ร่วมกัน ---
-        dist = abs(self.pos[0] - partner_pos[0]) + abs(self.pos[1] - partner_pos[1])
-        
-        # ถ้าอยู่ห่างกันเกินไป จะเกิดความกังวล (Social Need)
-        if dist > 2:
-            self.move_towards(partner_pos)
-            self.action = f"กำลังเดินไปหา {self.partner_name}"
-        elif dist == 0:
-            self.action = f"อยู่กับ {self.partner_name}"
-        else:
-            self.action = "พักผ่อนใกล้กัน"
-
-    def move_towards(self, target_pos):
-        # เคลื่อนที่เข้าหาเป้าหมายทีละ 1 ช่อง
-        if self.pos[0] < target_pos[0]: self.pos[0] += 1
-        elif self.pos[0] > target_pos[0]: self.pos[0] -= 1
-        
-        if self.pos[1] < target_pos[1]: self.pos[1] += 1
-        elif self.pos[1] > target_pos[1]: self.pos[1] -= 1
-
-    def get_realtime_thought(self, partner_pos):
-        hour = datetime.now().hour
-        dist = abs(self.pos[0] - partner_pos[0]) + abs(self.pos[1] - partner_pos[1])
-        
-        if dist == 0:
-            if 22 <= hour or hour < 5:
-                return f"{self.name}: 'ความอบอุ่นจาก {self.partner_name} ช่วยลดการสูญเสียความร้อนในคืนที่หนาวเหน็บ'"
-            if self.libido > 80:
-                return f"{self.name}: 'สายใยระหว่างเราเข้มแข็งขึ้น... ถึงเวลาของการส่งต่อชีวิต'"
-            return f"{self.name}: 'อยู่ใกล้ {self.partner_name} แล้วรู้สึกถึงความสมดุลของเอนโทรปีในใจ'"
-        
-        if dist > 3:
-            return f"{self.name}: 'ความอ้างว้างในมหาทวีปมันน่ากลัว... ต้องรีบกลับไปหา {self.partner_name}'"
-            
-        return f"{self.name}: 'มองเห็น {self.partner_name} อยู่ไกลๆ ร่างกายยังมีพลังงานเพียงพอ'"
+    def get_feeling(self):
+        f = []
+        if self.u_energy < 300: f.append("หิวจัด")
+        if self.bmi > 25: f.append("อึดอัดเพราะน้ำหนักตัว")
+        if self.toxin > 80: f.append("ปวดท้องขับถ่าย")
+        if self.libido > 90: f.append("อยากใกล้ชิดคู่ครอง")
+        return ", ".join(f) if f else "ร่างกายสมบูรณ์ดี"
