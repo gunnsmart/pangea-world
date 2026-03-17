@@ -151,5 +151,40 @@ class HumanAI:
             return "LOSE"
 
     # ... (Method update_physics, observe, experiment เดิม) ...
+class HumanAI:
+    def __init__(self, name, height, mass, partner_name):
+        # ... (Stats เดิม) ...
+        self.health = 100.0
+        self.inventory = []
+        self.knowledge = {} # เก็บสิ่งที่เรียนรู้: {"ใบไม้สีเขียว": "ยารักษา"}
+        
+    def collect_material(self, terrain_info):
+        """ สุ่มเก็บวัสดุและสมุนไพรตามพื้นที่ """
+        if terrain_info.get("has_herb"):
+            item = "ใบไม้ปริศนา"
+            if item not in self.inventory:
+                self.inventory.append(item)
+        
+        # เก็บหินหรือกิ่งไม้เหมือนเดิม
+        if random.random() < 0.05:
+            mats = {"ยอดเขาสูง": "หินคม", "ป่าดิบทึบ": "กิ่งไม้"}
+            item = mats.get(terrain_info['type'])
+            if item and item not in self.inventory: self.inventory.append(item)
+
+    def self_heal(self):
+        """ ลองรักษาตัวเองเมื่อบาดเจ็บ """
+        if self.health < 80 and "ใบไม้ปริศนา" in self.inventory:
+            # ลองใช้ใบไม้ (Trial)
+            self.inventory.remove("ใบไม้ปริศนา")
+            heal_amount = random.randint(10, 30)
+            self.health = min(100, self.health + heal_amount)
+            
+            # เรียนรู้ (Discovery)
+            if "ใบไม้ปริศนา" not in self.knowledge:
+                self.knowledge["ใบไม้ปริศนา"] = "สมุนไพรรักษาแผล"
+                return f"ค้นพบว่า 'ใบไม้ปริศนา' ช่วยให้แผลดีขึ้น!"
+        return None
+
+    # ... (Method update_physics, experiment เดิม) ...
 
 
