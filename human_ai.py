@@ -9,7 +9,7 @@ class HumanAI:
         self.height = height # m
         self.mass = mass     # kg
         self.birth_time = datetime.now()
-        
+        self.age = 25.0 
         # --- Stats (1:1 Real-time Scale) ---
         self.u_energy = 800.0  # พลังงานภายใน
         self.entropy = 0.0     # เอนโทรปี/ความเสื่อม
