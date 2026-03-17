@@ -4,16 +4,15 @@ from datetime import datetime
 from terrain import TerrainMap
 from human_ai import HumanAI
 
-st.set_page_config(page_title="Pangea: The First Logs", layout="centered")
+st.set_page_config(page_title="Pangea: The First Couple", layout="centered")
 
-# CSS สำหรับหน้าจอ Log แบบย้อนยุคแต่ดูแพง
 st.markdown("""
 <style>
-    .log-container { background-color: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; 
-                    padding: 20px; border-radius: 10px; height: 500px; overflow-y: auto; }
-    .adam-log { color: #5bc0de; margin-bottom: 10px; }
-    .eve-log { color: #f0ad4e; margin-bottom: 10px; }
-    .system-log { color: #777; font-size: 0.8em; }
+    .main { background-color: #0a0a0a; }
+    .log-box { background-color: #111; color: #d1d1d1; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+               padding: 25px; border-left: 5px solid #00ff41; border-radius: 5px; height: 500px; overflow-y: auto; }
+    .timestamp { color: #555; font-size: 0.8em; margin-right: 10px; }
+    .interaction { color: #f8f9fa; background-color: #222; padding: 5px 10px; border-radius: 5px; display: block; margin: 5px 0; border: 1px solid #444; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -21,39 +20,47 @@ if 'world' not in st.session_state:
     st.session_state.world = TerrainMap()
     st.session_state.adam = HumanAI("Adam", "Eve")
     st.session_state.eve = HumanAI("Eve", "Adam")
-    st.session_state.logs = []
+    st.session_state.history = []
 
-adam = st.session_state.adam
-eve = st.session_state.eve
+adam, eve = st.session_state.adam, st.session_state.eve
 world = st.session_state.world
 
-st.title("🛰️ Pangea Live Signal")
-st.write(f"### ⏱️ {datetime.now().strftime('%H:%M:%S')} (Real-time Observation)")
+st.title("👨‍👩‍👦 Pangea Life: The Bond")
+st.write(f"📡 **Real-time Sync:** {datetime.now().strftime('%H:%M:%S')}")
 
-# --- LOG DISPLAY ---
-log_html = '<div class="log-container">'
-for log in st.session_state.logs[-15:]: # โชว์ 15 บรรทัดล่าสุด
-    log_html += f'<div class="log-entry">{log}</div>'
-log_html += '</div>'
-st.markdown(log_html, unsafe_allow_html=True)
-
-# --- ENGINE (1 Second Tick) ---
+# --- Engine 1:1 Second ---
 time.sleep(1.0)
+now_str = datetime.now().strftime("[%H:%M:%S]")
 
-current_time = datetime.now().strftime("[%H:%M:%S]")
+# ประมวลผล Adam
+info_adam = world.get_info(adam.pos[0], adam.pos[1])
+adam.process_life(info_adam['elevation'], eve.pos)
 
-for p in [adam, eve]:
-    info = world.get_info(p.pos[0], p.pos[1])
-    p.update_physics(info['elevation'])
-    
-    # สุ่มโอกาสการสร้าง Log (ไม่ให้รกเกินไป)
-    if time.time() % 3 < 1.0:
-        thought = p.get_thought()
-        style = "adam-log" if p.name == "Adam" else "eve-log"
-        st.session_state.logs.append(f'<span class="system-log">{current_time}</span> <span class="{style}">{thought}</span>')
-    
-    if time.time() % 5 < 1.0:
-        action = p.perform_action(info['type'])
-        st.session_state.logs.append(f'<span class="system-log">{current_time} ⚙️ {action}</span>')
+# ประมวลผล Eve
+info_eve = world.get_info(eve.pos[0], eve.pos[1])
+eve.process_life(info_eve['elevation'], adam.pos)
+
+# สร้าง Log ปฏิสัมพันธ์ถ้าอยู่ด้วยกัน
+dist = abs(adam.pos[0] - eve.pos[0]) + abs(adam.pos[1] - eve.pos[1])
+if dist == 0 and random.random() < 0.4:
+    interact_logs = [
+        "Adam และ Eve กำลังแบ่งปันความร้อนในร่างกาย",
+        "ทักษะการเอาตัวรอดถูกถ่ายทอดผ่านสายตาของกันและกัน",
+        "พวกเขากำลังทำความสะอาดร่างกายให้กันเพื่อลดเอนโทรปีสะสม",
+        "Adam ยื่นผลไม้ป่าที่หามาได้ให้ Eve"
+    ]
+    st.session_state.history.append(f'<span class="timestamp">{now_str}</span> <span class="interaction">✨ {random.choice(interact_logs)}</span>')
+else:
+    # Log ความคิดส่วนตัว
+    for p in [adam, eve]:
+        if random.random() < 0.2:
+            target_pos = eve.pos if p.name == "Adam" else adam.pos
+            thought = p.get_realtime_thought(target_pos)
+            color = "#00d2ff" if p.name == "Adam" else "#ff9a9e"
+            st.session_state.history.append(f'<span class="timestamp">{now_str}</span> <b style="color:{color}">{thought}</b>')
+
+# แสดง Log
+log_html = "".join(st.session_state.history[-15:])
+st.markdown(f'<div class="log-box">{log_html}</div>', unsafe_allow_html=True)
 
 st.rerun()
