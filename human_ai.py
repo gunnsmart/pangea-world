@@ -9,50 +9,55 @@ class HumanAI:
         self.mass = mass
         self.birth_time = datetime.now()
         
-        # --- Physical Stats ---
+        # --- Stats เดิม ---
         self.age = 25.0
-        self.u_energy = 850.0 # พลังงานเริ่มต้น
+        self.u_energy = 850.0
         self.toxin = 0.0
         self.libido = 20.0
         self.pos = [7, 7]
         self.bmi = self.mass / (self.height ** 2)
         
-        # --- Perception & Memory (ดวงตาและความจำ) ---
+        # --- Perception & Memory ---
         self.current_view = "ความว่างเปล่า"
-        self.memory = [] # เก็บเหตุการณ์ล่าสุด 5 อย่าง
+        self.memory = []
 
-    def update_physics(self, elevation):
-        # 1. Aging (1 วันจริง = 1 วันเกม)
+        # --- 💖 เพิ่มระบบความสัมพันธ์ (Relationship) ---
+        self.bond = 10.0 # เริ่มต้นที่ 10 (คนแปลกหน้า) เต็ม 100
+
+    def update_physics(self, elevation, partner_pos):
+        # 1. Aging & Physics (เหมือนเดิม)
         days = (datetime.now() - self.birth_time).total_seconds() / 86400
         self.age = 25.0 + (days / 365.25)
         
-        # 2. Thermodynamics: Work = Force * Distance (ยิ่งหนักยิ่งเหนื่อย)
         work_load = 0.005 * (self.mass / 70.0) * (elevation + 1.2)
         self.u_energy -= work_load
         self.toxin += 0.001
         self.libido += 0.002
         
-        # 3. BMI Dynamics (จำลองการเปลี่ยนแปลงมวลตามพลังงาน)
+        # 2. BMI Dynamics
         energy_balance = (self.u_energy - 500) / 1000
         self.mass += energy_balance * 0.0001
         self.bmi = self.mass / (self.height ** 2)
 
+        # 3. 💖 คำนวณความผูกพัน (Bonding Logic)
+        dist = abs(self.pos[0] - partner_pos[0]) + abs(self.pos[1] - partner_pos[1])
+        if dist == 0:
+            self.bond = min(100, self.bond + 0.02) # อยู่ใกล้กันความผูกพันเพิ่ม
+        elif dist > 5:
+            self.bond = max(0, self.bond - 0.005) # ห่างกันนานๆ จะเริ่มอ้างว้าง
+
     def observe(self, terrain_info):
-        """ รับรู้และจำสิ่งที่เห็น """
         self.current_view = terrain_info['type']
         obs = f"อยู่ที่{self.current_view}"
-        if terrain_info['elevation'] >= 4: obs += " (ลมแรงและล้ามาก)"
-        
         if not self.memory or self.memory[-1] != obs:
             self.memory.append(obs)
             if len(self.memory) > 5: self.memory.pop(0)
 
     def get_feeling_context(self):
-        """ สรุปความรู้สึกที่เชื่อมโยงกับความจำส่งให้ AI """
         feelings = []
         if self.u_energy < 300: feelings.append("หิวจนแสบท้อง")
-        if self.bmi > 24: feelings.append("ตัวหนักเคลื่อนไหวลำบาก")
-        if self.toxin > 80: feelings.append("อึดอัดต้องระบายของเสีย")
+        if self.bond > 80: feelings.append("รู้สึกรักและอยากดูแลคู่ครองมาก")
+        elif self.bond < 20: feelings.append("รู้สึกไม่ค่อยคุ้นเคยกับอีกคน")
         
         recent_path = " -> ".join(self.memory)
-        return f"ความรู้สึก: {', '.join(feelings) if feelings else 'ร่างกายปกติ'} | สิ่งที่เพิ่งเจอ: {recent_path}"
+        return f"ความรู้สึก: {', '.join(feelings) if feelings else 'ปกติ'} | ระดับความผูกพัน: {self.bond:.1f}/100 | สิ่งที่เพิ่งเจอ: {recent_path}"
