@@ -1,95 +1,59 @@
 import streamlit as st
 import time
-import random
-from environment import WeatherSystem
-from biology import PlantEcosystem, FaunaEcosystem, HumanEcosystem
+from datetime import datetime
+from terrain import TerrainMap
+from human_ai import HumanAI
 
-st.set_page_config(page_title="Pangea 16K: Migration Era", layout="wide")
+st.set_page_config(page_title="Pangea: The First Logs", layout="centered")
 
-if 'env' not in st.session_state:
-    st.session_state.env = WeatherSystem()
-    st.session_state.bio_plant = PlantEcosystem()
-    st.session_state.bio_fauna = FaunaEcosystem()
-    st.session_state.bio_human = HumanEcosystem()
+# CSS สำหรับหน้าจอ Log แบบย้อนยุคแต่ดูแพง
+st.markdown("""
+<style>
+    .log-container { background-color: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; 
+                    padding: 20px; border-radius: 10px; height: 500px; overflow-y: auto; }
+    .adam-log { color: #5bc0de; margin-bottom: 10px; }
+    .eve-log { color: #f0ad4e; margin-bottom: 10px; }
+    .system-log { color: #777; font-size: 0.8em; }
+</style>
+""", unsafe_allow_html=True)
 
-env = st.session_state.env
-plants = st.session_state.bio_plant
-fauna = st.session_state.bio_fauna
-humans = st.session_state.bio_human
+if 'world' not in st.session_state:
+    st.session_state.world = TerrainMap()
+    st.session_state.adam = HumanAI("Adam", "Eve")
+    st.session_state.eve = HumanAI("Eve", "Adam")
+    st.session_state.logs = []
 
-# --- 🛰️ ระบบแผนที่อัจฉริยะ (Migration Logic) ---
-def generate_advanced_map(biomass, f, h):
-    grid_size = 10
-    world_map = [["🟫" for _ in range(grid_size)] for _ in range(grid_size)]
+adam = st.session_state.adam
+eve = st.session_state.eve
+world = st.session_state.world
+
+st.title("🛰️ Pangea Live Signal")
+st.write(f"### ⏱️ {datetime.now().strftime('%H:%M:%S')} (Real-time Observation)")
+
+# --- LOG DISPLAY ---
+log_html = '<div class="log-container">'
+for log in st.session_state.logs[-15:]: # โชว์ 15 บรรทัดล่าสุด
+    log_html += f'<div class="log-entry">{log}</div>'
+log_html += '</div>'
+st.markdown(log_html, unsafe_allow_html=True)
+
+# --- ENGINE (1 Second Tick) ---
+time.sleep(1.0)
+
+current_time = datetime.now().strftime("[%H:%M:%S]")
+
+for p in [adam, eve]:
+    info = world.get_info(p.pos[0], p.pos[1])
+    p.update_physics(info['elevation'])
     
-    # 1. กำหนดพื้นที่สีเขียว (Green Zones)
-    green_slots = int(biomass)
-    all_coords = [(r, c) for r in range(grid_size) for c in range(grid_size)]
-    random.shuffle(all_coords)
+    # สุ่มโอกาสการสร้าง Log (ไม่ให้รกเกินไป)
+    if time.time() % 3 < 1.0:
+        thought = p.get_thought()
+        style = "adam-log" if p.name == "Adam" else "eve-log"
+        st.session_state.logs.append(f'<span class="system-log">{current_time}</span> <span class="{style}">{thought}</span>')
     
-    green_coords = []
-    for i in range(min(green_slots, 100)):
-        r, c = all_coords[i]
-        world_map[r][c] = "🟩"
-        green_coords.append((r, c))
-
-    # 2. ฟังก์ชันการอพยพ (สัตว์จะพยายามหาที่เขียวๆ อยู่)
-    def place_with_migration(emoji, count, divisor):
-        actual_icons = min(count // divisor, 8) # จำกัดจำนวนไอคอนไม่ให้รกเกินไป
-        for _ in range(actual_icons):
-            # โอกาส 80% ที่จะไปลงที่เขียว (🟩), 20% หลงไปที่น้ำตาล (🟫)
-            if green_coords and random.random() < 0.8:
-                r, c = random.choice(green_coords)
-            else:
-                r, c = random.randint(0, 9), random.randint(0, 9)
-            world_map[r][c] = emoji
-
-    # 3. วางสัตว์ตามลำดับความสำคัญ
-    place_with_migration("🐘", fauna.elephant_pop, 2)
-    place_with_migration("🦌", fauna.deer_pop, 15)
-    place_with_migration("🐇", fauna.rabbit_pop, 60)
-    place_with_migration("🐅", fauna.tiger_pop, 2)
-    place_with_migration("🦅", fauna.eagle_pop, 2)
-    
-    # มนุษย์จะชอบอยู่ใกล้กัน (สร้างกลุ่มก้อน/หมู่บ้าน)
-    if h.human_pop > 0:
-        base_r, base_c = (random.choice(green_coords) if green_coords else (5,5))
-        for _ in range(min(h.human_pop, 5)):
-            r = max(0, min(9, base_r + random.randint(-1, 1)))
-            c = max(0, min(9, base_c + random.randint(-1, 1)))
-            world_map[r][c] = "👥"
-            
-    return world_map
-
-# --- 🖥️ ส่วนการแสดงผล ---
-st.title("🌍 Pangea 16K: Migration & Clusters")
-st.subheader(f"วันที่ (Day): {env.day} | สภาพอากาศ: {env.current_state}")
-
-col_map, col_stat = st.columns([2, 1])
-
-with col_map:
-    st.write("### 🗺️ แผนที่การเคลื่อนย้ายถิ่นฐาน")
-    current_map = generate_advanced_map(plants.global_biomass, fauna, humans)
-    for row in current_map:
-        st.text(" ".join(row))
-    st.caption("สัตว์จะไปรวมตัวกันในพื้นที่สีเขียว (🟩) มนุษย์ (👥) จะเริ่มเกาะกลุ่มเป็นหมู่บ้าน")
-
-with col_stat:
-    st.write("### 🐾 ประชากรทั้งหมด")
-    st.write(f"🐘 ช้าง: {fauna.elephant_pop} | 🐅 เสือ: {fauna.tiger_pop}")
-    st.write(f"🦌 กวาง: {fauna.deer_pop} | 🦅 อินทรี: {fauna.eagle_pop}")
-    st.write(f"🐇 กระต่าย: {fauna.rabbit_pop}")
-    st.divider()
-    st.metric("👥 มนุษย์", f"{humans.human_pop} คน")
-    st.metric("🌱 ความสดใหม่ของป่า", f"{plants.global_biomass:.1f}%")
-
-# --- ⚙️ Engine ---
-time.sleep(1.2)
-env.step_day()
-plants.step_day(env.global_moisture, env.global_temperature)
-consumed = fauna.step_day(plants.global_biomass)
-plants.global_biomass -= consumed
-hunted = humans.step_day(plants.global_biomass, fauna.deer_pop)
-fauna.deer_pop -= hunted
+    if time.time() % 5 < 1.0:
+        action = p.perform_action(info['type'])
+        st.session_state.logs.append(f'<span class="system-log">{current_time} ⚙️ {action}</span>')
 
 st.rerun()
