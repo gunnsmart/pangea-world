@@ -8,63 +8,52 @@ class HumanAI:
         self.height, self.mass = height, mass
         self.birth_time = datetime.now()
         
-        # Stats
+        # Stats พื้นฐาน (Thermodynamics)
         self.age = 25.0
         self.health = 100.0
         self.u_energy = 850.0
-        self.toxin = 0.0
-        self.bond = 10.0
         self.pos = [7, 7]
+        self.bond = 10.0
         
-        # Discovery & Inventory
+        # ระบบการเรียนรู้และกระเป๋าเก็บของ
         self.inventory = []
-        self.knowledge = {} # เก็บสิ่งที่เรียนรู้เอง
-        self.memory = []
-        self.has_shelter = False
-        self.shelter_pos = None
-        self.has_fire = False # เตรียมสำหรับระบบไฟ
+        self.knowledge = {} # { (item1, item2): "ชื่อที่ AI ตั้งให้" }
+        
+        # 🧪 นิยามคุณสมบัติวัตถุดิบ (Physics Attributes)
+        self.materials_attr = {
+            "หินเหล็กไฟ": {"sharp": 15, "hard": 60, "heat": 40, "weight": 20},
+            "กิ่งไม้แห้ง": {"sharp": 5, "hard": 15, "heat": 20, "length": 50},
+            "ใบไม้ใหญ่": {"sharp": 0, "hard": 2, "insulation": 40, "soft": 30},
+            "เถาวัลย์": {"sharp": 0, "hard": 10, "binding": 60, "length": 30},
+            "หินคม": {"sharp": 40, "hard": 50, "heat": 10, "weight": 15}
+        }
+
+    def experiment(self):
+        """ สุ่มหยิบของมาลองผสม และส่งผลลัพธ์เป็น 'ค่าพลังดิบ' """
+        if len(self.inventory) < 2: return None, None
+        
+        items = random.sample(self.inventory, 2)
+        # ดึงค่าพลังจากวัตถุดิบ (ถ้าไม่มีให้ค่าเริ่มต้นเป็น 1)
+        attr1 = self.materials_attr.get(items[0], {"hard": 1})
+        attr2 = self.materials_attr.get(items[1], {"hard": 1})
+        
+        # ผลลัพธ์คือการ 'ผสาน' คุณสมบัติ (Emergent Attributes)
+        result_stats = {
+            "ความคม": attr1.get("sharp", 0) + attr2.get("sharp", 0),
+            "ความแข็ง": attr1.get("hard", 0) + attr2.get("hard", 0),
+            "ความร้อน": attr1.get("heat", 0) + attr2.get("heat", 0),
+            "ความยาว/ระยะ": attr1.get("length", 0) + attr2.get("length", 0),
+            "การกันหนาว": attr1.get("insulation", 0) + attr2.get("insulation", 0),
+            "การยึดเหนี่ยว": attr1.get("binding", 0) + attr2.get("binding", 0)
+        }
+        return items, result_stats
 
     def update_physics(self, elevation, partner_pos):
         days = (datetime.now() - self.birth_time).total_seconds() / 86400
         self.age = 25.0 + (days / 365.25)
+        # dU = dQ - dW (พลังงานลดลงตามงานและการเคลื่อนที่)
+        work = 0.005 * (self.mass / 70.0) * (elevation + 1.2)
+        self.u_energy -= work
         
-        # ถ้าอยู่ในบ้าน (Shelter) จะลดการใช้พลังงาน
-        dist_to_shelter = 0
-        if self.has_shelter:
-            dist_to_shelter = abs(self.pos[0] - self.shelter_pos[0]) + abs(self.pos[1] - self.shelter_pos[1])
-        
-        mult = 0.6 if (self.has_shelter and dist_to_shelter == 0) else 1.0
-        work_load = 0.005 * (self.mass / 70.0) * (elevation + 1.2) * mult
-        
-        self.u_energy -= work_load
-        self.bmi = self.mass / (self.height ** 2)
-
-        # Bonding
         dist = abs(self.pos[0] - partner_pos[0]) + abs(self.pos[1] - partner_pos[1])
-        if dist == 0: self.bond = min(100, self.bond + 0.02)
-
-    def experiment(self):
-        """ ลองผิดลองถูกด้วยตัวเอง """
-        if len(self.inventory) >= 2:
-            items = random.sample(self.inventory, 2)
-            recipe = "+".join(sorted(items))
-            
-            if recipe == "กิ่งไม้+ใบไม้" and not self.has_shelter:
-                self.has_shelter, self.shelter_pos = True, [self.pos[0], self.pos[1]]
-                self.knowledge[recipe] = "เพิงพัก"
-                return "สร้างเพิงพักสำเร็จ! นอนสบายขึ้นเยอะ"
-            
-            if recipe == "หิน+หิน" and not self.has_fire:
-                if random.random() < 0.1: # ไฟจุดยาก ต้องลองบ่อยๆ
-                    self.has_fire = True
-                    self.knowledge[recipe] = "ไฟ"
-                    return "เหวอ! มีประกายไฟออกมาจากหินว่ะ!"
-        return None
-
-    def self_heal(self):
-        if self.health < 80 and "ใบไม้" in self.inventory:
-            self.inventory.remove("ใบไม้")
-            self.health = min(100, self.health + 20)
-            self.knowledge["ใบไม้"] = "ยารักษา"
-            return "แผลเริ่มดีขึ้นแฮะ ใบไม้นี้ใช้ได้!"
-        return None
+        if dist == 0: self.bond = min(100, self.bond + 0.03)
