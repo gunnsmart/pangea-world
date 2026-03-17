@@ -101,4 +101,37 @@ for p in [adam, eve]:
 # --- แสดงสถานะสุขภาพใน Dashboard ---
 # เพิ่ม st.error หรือ st.warning ถ้า Health ต่ำ
 
+# --- ใน Dashboard ของ app.py ---
+for i, p in enumerate([adam, eve]):
+    with [c1, c2][i]:
+        st.markdown(f'<div class="status-card">', unsafe_allow_html=True)
+        # เพิ่มแถบ Health (สีแดง)
+        health_color = "🔴" if p.health < 50 else "🟢"
+        st.write(f"{health_color} พลังชีวิต: **{p.health:.1f}/100**")
+        st.progress(max(0.0, min(p.health/100, 1.0)))
+        
+        # ... (Stats พลังงาน/ความผูกพันเดิม) ...
+
+# --- ใน Engine Loop ---
+for p in [adam, eve]:
+    info = world.get_info(p.pos[0], p.pos[1])
+    p.collect_material(info)
+    
+    # ถ้าบาดเจ็บ ให้ลองรักษาตัวเอง
+    heal_msg = p.self_heal()
+    if heal_msg:
+        st.session_state.history.append(("ระบบ", f"⚕️ {p.name}: {heal_msg}", ""))
+
+# --- ปรับ Prompt ให้ AI พูดถึงอาการบาดเจ็บ ---
+if random.random() < 0.15:
+    # ... (สลับคนพูดเหมือนเดิม) ...
+    prompt = f"""
+    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่)
+    คุณคือ {speaker.name} สถานะสุขภาพ: {speaker.health}/100
+    ความรู้เรื่องยา: {speaker.knowledge.get('ใบไม้ปริศนา', 'ไม่รู้อะไรเลย')}
+    
+    จงพูด 1 ประโยคสั้นๆ ที่แสดงความเจ็บปวด หรือความดีใจหลังเจอวิธีรักษา
+    ห้ามคนสอน คุณต้องเรียนรู้จากความเจ็บปวดเอง! (นะ, ว่ะ, แฮะ)
+    """
+
 
