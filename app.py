@@ -1,161 +1,54 @@
 import streamlit as st
-import time
-import random
+import time, random
+from datetime import datetime
+from groq import Groq
+from terrain import TerrainMap
+from human_ai import HumanAI
 from wildlife import spawn_wildlife
-# (Import อื่นๆ เหมือนเดิม)
 
-if 'animals' not in st.session_state:
-    st.session_state.animals = spawn_wildlife()
+st.set_page_config(page_title="Pangea 16K", layout="wide")
 
-animals = st.session_state.animals
-world = st.session_state.world
+# Initialize
+if 'world' not in st.session_state: st.session_state.world = TerrainMap()
+if 'adam' not in st.session_state: st.session_state.adam = HumanAI("Adam", 1.80, 75, "Eve")
+if 'eve' not in st.session_state: st.session_state.eve = HumanAI("Eve", 1.65, 55, "Adam")
+if 'animals' not in st.session_state: st.session_state.animals = spawn_wildlife()
+if 'history' not in st.session_state: st.session_state.history = []
+if 'last_speaker' not in st.session_state: st.session_state.last_speaker = None
 
-# --- ENGINE LOOP 1:1 ---
-world.regrow() # พืชงอก
-for a in animals:
-    tile = world.get_info(a.pos[0], a.pos[1])
-    a.update_life(tile['elevation'])
-    
-    # ห่วงโซ่อาหาร (Food Chain)
-    if a.status == "หิว":
-        if a.a_type == "Herbivore" and tile['food_level'] > 20:
-            world.vegetation[a.pos[0]][a.pos[1]] -= 20
-            a.energy += a.energy_gain
-            a.status = "อิ่มแล้ว"
-        elif a.a_type == "Carnivore":
-            # ล่าสัตว์ตัวอื่นที่อยู่ในช่องเดียวกัน
-            for prey in animals:
-                if prey.a_type == "Herbivore" and prey.pos == a.pos:
-                    animals.remove(prey) # โดนกิน!
-                    a.energy += a.energy_gain
-                    st.session_state.history.append(("ระบบ", f"⚠️ {a.species} ล่า {prey.species} สำเร็จ!", ""))
-                    break
-    a.move()
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+world, adam, eve, animals = st.session_state.world, st.session_state.adam, st.session_state.eve, st.session_state.animals
 
-# --- แสดงผลหน้าจอ ---
-# (Dashboard Adam/Eve เหมือนเดิม)
-st.divider()
-st.subheader("🐾 สถานะระบบนิเวศ (Wildlife Monitor)")
-cols = st.columns(len(animals))
-for i, a in enumerate(animals):
-    with cols[i]:
-        st.write(f"{a.icon} {a.species}")
-        st.caption(f"E: {a.energy:.0f} | {a.status}")
-
-# บทสนทนา AI (ให้ Adam/Eve พูดถึงสัตว์ที่เห็น)
-# (ปรับ Prompt ให้ AI รับรู้ตำแหน่งสัตว์ป่ารอบตัว)
-# --- ใน Loop ของ app.py ---
-
-for p in [adam, eve]:
-    # 1. ให้เขาสุ่มเก็บของเองตามพื้นที่ที่ยืนอยู่
-    p.collect_material(p.current_view)
-    
-    # 2. ถ้าเจออันตราย (เช่น มีสัตว์ดุร้ายในช่องเดียวกัน) หรือหิวจัด 
-    # ให้เขาลอง Experiment เอง
-    if p.u_energy < 400 or any(a.a_type == "Carnivore" and a.pos == p.pos for a in animals):
-        discovery_msg = p.experiment()
-        if discovery_msg:
-            st.session_state.history.append(("ระบบ", f"💡 {p.name}: {discovery_msg}", ""))
-
-# --- ปรับ AI Prompt ให้คุยเรื่องการค้นพบ ---
-if random.random() < 0.15:
-    # (ระบบเลือกคนพูดเหมือนเดิม)
-    ctx = speaker.get_feeling_context()
-    knw = ", ".join(speaker.knowledge.values())
-    
-    prompt = f"""
-    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่)
-    คุณคือ {speaker.name} สิ่งที่คุณรู้วิธีทำตอนนี้: {knw if knw else 'ยังไม่รู้อะไรเลย'}
-    สถานะร่างกายและความจำ: {ctx}
-    
-    จงพูด 1 ประโยคสั้นๆ ที่แสดงถึงการ 'พยายามเรียนรู้' หรือ 'สงสัย' ในวัสดุรอบตัว
-    เช่น 'ลองเอาหินมาถูกับไม้ดูไหม?' หรือ 'ของพวกนี้มันเอามาทำอะไรได้นะ?'
-    ห้ามให้ใครสอน คุณต้องคิดเอง! (นะ, ว่ะ, แฮะ)
-    """
-    # (ส่งหา Groq ต่อ)
-# --- ภายใน Engine Loop ของ app.py ---
-
-for p in [adam, eve]:
-    p.update_physics(world.get_info(p.pos[0], p.pos[1])['elevation'], 
-                     eve.pos if p.name == "Adam" else adam.pos)
-    
-    # ตรวจสอบการปะทะกับสัตว์ในพิกัดเดียวกัน
-    for animal in animals:
-        if animal.pos == p.pos:
-            if animal.a_type == "Carnivore" or (p.u_energy < 300):
-                # เกิดการต่อสู้ (สัญชาตญาณป้องกันตัว หรือ ความหิว)
-                result = p.process_encounter(animal)
-                
-                if result == "WIN":
-                    st.session_state.history.append(("ระบบ", f"⚔️ {p.name} ล่า {animal.species} ได้สำเร็จ! ได้รับพลังงานมหาศาล", ""))
-                    if animal in animals: animals.remove(animal) # สัตว์โดนกิน
-                else:
-                    st.session_state.history.append(("ระบบ", f"⚠️ {p.name} ถูก {animal.species} ทำร้าย! บาดเจ็บสาหัส", ""))
-            
-    # ระบบสุ่มลองผิดลองถูก (Experiment)
-    if random.random() < 0.05: # โอกาส 5% ที่จะลองผสมของในมือ
-        discovery = p.experiment()
-        if discovery:
-            st.session_state.history.append(("ระบบ", f"💡 {p.name}: {discovery}", ""))
-
-# --- แสดงสถานะสุขภาพใน Dashboard ---
-# เพิ่ม st.error หรือ st.warning ถ้า Health ต่ำ
-
-# --- ใน Dashboard ของ app.py ---
-for i, p in enumerate([adam, eve]):
-    with [c1, c2][i]:
-        st.markdown(f'<div class="status-card">', unsafe_allow_html=True)
-        # เพิ่มแถบ Health (สีแดง)
-        health_color = "🔴" if p.health < 50 else "🟢"
-        st.write(f"{health_color} พลังชีวิต: **{p.health:.1f}/100**")
-        st.progress(max(0.0, min(p.health/100, 1.0)))
-        
-        # ... (Stats พลังงาน/ความผูกพันเดิม) ...
-
-# --- ใน Engine Loop ---
+# --- ENGINE ---
+time.sleep(1.0)
 for p in [adam, eve]:
     info = world.get_info(p.pos[0], p.pos[1])
-    p.collect_material(info)
+    p.update_physics(info['elevation'], (eve.pos if p.name=="Adam" else adam.pos))
     
-    # ถ้าบาดเจ็บ ให้ลองรักษาตัวเอง
-    heal_msg = p.self_heal()
-    if heal_msg:
-        st.session_state.history.append(("ระบบ", f"⚕️ {p.name}: {heal_msg}", ""))
+    # สุ่มลองยา/ลองผสมของ
+    msg = p.self_heal() or p.experiment()
+    if msg: st.session_state.history.append(("ระบบ", f"💡 {p.name}: {msg}", ""))
 
-# --- ปรับ Prompt ให้ AI พูดถึงอาการบาดเจ็บ ---
-if random.random() < 0.15:
-    # ... (สลับคนพูดเหมือนเดิม) ...
-    prompt = f"""
-    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่)
-    คุณคือ {speaker.name} สถานะสุขภาพ: {speaker.health}/100
-    ความรู้เรื่องยา: {speaker.knowledge.get('ใบไม้ปริศนา', 'ไม่รู้อะไรเลย')}
-    
-    จงพูด 1 ประโยคสั้นๆ ที่แสดงความเจ็บปวด หรือความดีใจหลังเจอวิธีรักษา
-    ห้ามคนสอน คุณต้องเรียนรู้จากความเจ็บปวดเอง! (นะ, ว่ะ, แฮะ)
-    """
-# --- ใน Dashboard ของ app.py ---
+# --- DASHBOARD ---
+st.title("🌋 Pangea 16K: มหาทวีปแห่งการเรียนรู้")
+c1, c2 = st.columns(2)
 for i, p in enumerate([adam, eve]):
     with [c1, c2][i]:
-        st.markdown(f'<div class="status-card">', unsafe_allow_html=True)
-        st.subheader(f"{'👨' if p.name=='Adam' else '👩'} {p.name}")
-        
-        # แสดงสถานะที่พัก
-        if p.has_shelter:
-            st.success(f"🏠 มีที่พักที่พิกัด: {p.shelter_pos}")
-        else:
-            st.info("🏕️ ยังไม่มีที่พักอาศัย")
-            
-        # ... (Metrics อื่นๆ) ...
+        st.subheader(f"{p.name}")
+        st.write(f"❤️ Health: {p.health:.1f} | ⚡ Energy: {p.u_energy:.1f}")
+        st.progress(max(0.0, min(p.health/100, 1.0)))
+        if p.has_fire: st.write("🔥 มีทักษะการใช้ไฟแล้ว")
 
-# --- ปรับ AI Prompt ให้บ่นเรื่อง 'บ้าน' ---
-if random.random() < 0.15:
-    # ...
-    prompt = f"""
-    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่ เช่น อพาร์ทเม้นท์, โรงแรม)
-    คุณคือ {speaker.name} สถานะที่พัก: {'มีเพิงพักแล้ว' if speaker.has_shelter else 'นอนกลางป่า'}
-    
-    จงพูด 1 ประโยคสั้นๆ ถึงความรู้สึกในการมีที่พัก หรือความปรารถนาที่จะมีที่หลบฝนและลม
-    ใช้ภาษาคนป่า (นะ, ว่ะ, แฮะ) ห้ามหลุดยุค!
-    """
+# --- AI Chat ---
+if random.random() < 0.1:
+    speaker = adam if st.session_state.last_speaker == "Eve" else eve
+    st.session_state.last_speaker = speaker.name
+    prompt = f"คุณคือ {speaker.name} อยู่ในป่ามหาทวีป รู้เรื่อง {list(speaker.knowledge.values())}. พูดไทยสั้นๆ 1 ประโยคแบบคนป่า"
+    chat = client.chat.completions.create(messages=[{"role":"user","content":prompt}], model="llama-3.1-8b-instant")
+    st.session_state.history.append((speaker.name, chat.choices[0].message.content, datetime.now().strftime("%H:%M:%S")))
 
+st.write("### 📜 บันทึกเหตุการณ์")
+for name, msg, ts in reversed(st.session_state.history[-10:]):
+    st.write(f"**{name}**: {msg}")
 
+st.rerun()
