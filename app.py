@@ -133,5 +133,29 @@ if random.random() < 0.15:
     จงพูด 1 ประโยคสั้นๆ ที่แสดงความเจ็บปวด หรือความดีใจหลังเจอวิธีรักษา
     ห้ามคนสอน คุณต้องเรียนรู้จากความเจ็บปวดเอง! (นะ, ว่ะ, แฮะ)
     """
+# --- ใน Dashboard ของ app.py ---
+for i, p in enumerate([adam, eve]):
+    with [c1, c2][i]:
+        st.markdown(f'<div class="status-card">', unsafe_allow_html=True)
+        st.subheader(f"{'👨' if p.name=='Adam' else '👩'} {p.name}")
+        
+        # แสดงสถานะที่พัก
+        if p.has_shelter:
+            st.success(f"🏠 มีที่พักที่พิกัด: {p.shelter_pos}")
+        else:
+            st.info("🏕️ ยังไม่มีที่พักอาศัย")
+            
+        # ... (Metrics อื่นๆ) ...
+
+# --- ปรับ AI Prompt ให้บ่นเรื่อง 'บ้าน' ---
+if random.random() < 0.15:
+    # ...
+    prompt = f"""
+    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่ เช่น อพาร์ทเม้นท์, โรงแรม)
+    คุณคือ {speaker.name} สถานะที่พัก: {'มีเพิงพักแล้ว' if speaker.has_shelter else 'นอนกลางป่า'}
+    
+    จงพูด 1 ประโยคสั้นๆ ถึงความรู้สึกในการมีที่พัก หรือความปรารถนาที่จะมีที่หลบฝนและลม
+    ใช้ภาษาคนป่า (นะ, ว่ะ, แฮะ) ห้ามหลุดยุค!
+    """
 
 
