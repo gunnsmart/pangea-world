@@ -73,4 +73,32 @@ if random.random() < 0.15:
     ห้ามให้ใครสอน คุณต้องคิดเอง! (นะ, ว่ะ, แฮะ)
     """
     # (ส่งหา Groq ต่อ)
+# --- ภายใน Engine Loop ของ app.py ---
+
+for p in [adam, eve]:
+    p.update_physics(world.get_info(p.pos[0], p.pos[1])['elevation'], 
+                     eve.pos if p.name == "Adam" else adam.pos)
+    
+    # ตรวจสอบการปะทะกับสัตว์ในพิกัดเดียวกัน
+    for animal in animals:
+        if animal.pos == p.pos:
+            if animal.a_type == "Carnivore" or (p.u_energy < 300):
+                # เกิดการต่อสู้ (สัญชาตญาณป้องกันตัว หรือ ความหิว)
+                result = p.process_encounter(animal)
+                
+                if result == "WIN":
+                    st.session_state.history.append(("ระบบ", f"⚔️ {p.name} ล่า {animal.species} ได้สำเร็จ! ได้รับพลังงานมหาศาล", ""))
+                    if animal in animals: animals.remove(animal) # สัตว์โดนกิน
+                else:
+                    st.session_state.history.append(("ระบบ", f"⚠️ {p.name} ถูก {animal.species} ทำร้าย! บาดเจ็บสาหัส", ""))
+            
+    # ระบบสุ่มลองผิดลองถูก (Experiment)
+    if random.random() < 0.05: # โอกาส 5% ที่จะลองผสมของในมือ
+        discovery = p.experiment()
+        if discovery:
+            st.session_state.history.append(("ระบบ", f"💡 {p.name}: {discovery}", ""))
+
+# --- แสดงสถานะสุขภาพใน Dashboard ---
+# เพิ่ม st.error หรือ st.warning ถ้า Health ต่ำ
+
 
