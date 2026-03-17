@@ -106,3 +106,50 @@ class HumanAI:
                 return f"ค้นพบวิธีทำ {res} จากการลองผิดลองถูก!"
         return None
 
+import random
+from datetime import datetime
+
+class HumanAI:
+    def __init__(self, name, height, mass, partner_name):
+        self.name = name
+        self.partner_name = partner_name
+        self.height, self.mass = height, mass
+        self.birth_time = datetime.now()
+        
+        # --- ระบบพลังชีวิตและเครื่องมือ ---
+        self.health = 100.0
+        self.inventory = [] 
+        self.knowledge = {} # เก็บสิ่งที่ค้นพบ เช่น {"หิน+ไม้": "หอก"}
+        self.u_energy = 850.0
+        self.age = 25.0
+        self.pos = [7, 7]
+        self.bond = 10.0
+        self.memory = []
+
+    def get_combat_power(self):
+        """ คำนวณพลังโจมตี: มวลร่างกาย + อาวุธที่มีในความรู้ """
+        base_power = self.mass * 0.1
+        if "หอกหิน" in self.knowledge.values():
+            base_power += 50.0 # โบนัสจากอาวุธ
+        return base_power
+
+    def process_encounter(self, animal):
+        """ ประมวลผลเมื่อเจอสัตว์: ล่า หรือ ถูกล่า """
+        power = self.get_combat_power()
+        
+        # โอกาสชนะอิงจากพลังโจมตี vs มวลของสัตว์
+        win_chance = (power / animal.mass) * 0.5
+        outcome = random.random() < win_chance
+        
+        if outcome: # ชนะ
+            self.u_energy = min(1000, self.u_energy + animal.energy_gain)
+            return "WIN"
+        else: # แพ้
+            damage = (animal.mass / self.mass) * 20
+            self.health -= damage
+            self.u_energy -= 100
+            return "LOSE"
+
+    # ... (Method update_physics, observe, experiment เดิม) ...
+
+
