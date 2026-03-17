@@ -44,3 +44,33 @@ for i, a in enumerate(animals):
 
 # บทสนทนา AI (ให้ Adam/Eve พูดถึงสัตว์ที่เห็น)
 # (ปรับ Prompt ให้ AI รับรู้ตำแหน่งสัตว์ป่ารอบตัว)
+# --- ใน Loop ของ app.py ---
+
+for p in [adam, eve]:
+    # 1. ให้เขาสุ่มเก็บของเองตามพื้นที่ที่ยืนอยู่
+    p.collect_material(p.current_view)
+    
+    # 2. ถ้าเจออันตราย (เช่น มีสัตว์ดุร้ายในช่องเดียวกัน) หรือหิวจัด 
+    # ให้เขาลอง Experiment เอง
+    if p.u_energy < 400 or any(a.a_type == "Carnivore" and a.pos == p.pos for a in animals):
+        discovery_msg = p.experiment()
+        if discovery_msg:
+            st.session_state.history.append(("ระบบ", f"💡 {p.name}: {discovery_msg}", ""))
+
+# --- ปรับ AI Prompt ให้คุยเรื่องการค้นพบ ---
+if random.random() < 0.15:
+    # (ระบบเลือกคนพูดเหมือนเดิม)
+    ctx = speaker.get_feeling_context()
+    knw = ", ".join(speaker.knowledge.values())
+    
+    prompt = f"""
+    บริบท: ยุค Pangea (ห้ามใช้ศัพท์สมัยใหม่)
+    คุณคือ {speaker.name} สิ่งที่คุณรู้วิธีทำตอนนี้: {knw if knw else 'ยังไม่รู้อะไรเลย'}
+    สถานะร่างกายและความจำ: {ctx}
+    
+    จงพูด 1 ประโยคสั้นๆ ที่แสดงถึงการ 'พยายามเรียนรู้' หรือ 'สงสัย' ในวัสดุรอบตัว
+    เช่น 'ลองเอาหินมาถูกับไม้ดูไหม?' หรือ 'ของพวกนี้มันเอามาทำอะไรได้นะ?'
+    ห้ามให้ใครสอน คุณต้องคิดเอง! (นะ, ว่ะ, แฮะ)
+    """
+    # (ส่งหา Groq ต่อ)
+
