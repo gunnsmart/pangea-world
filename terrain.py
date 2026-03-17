@@ -19,7 +19,7 @@ class TerrainMap:
             [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0],
             [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
         ]
-        self.mapping = {0: "ริมน้ำ", 1: "ชายหาด", 2: "ทุ่งหญ้า", 3: "ชายป่า", 4: "ยอดเขา"}
+        self.mapping = {0: "ริมน้ำ", 1: "ชายหาด", 2: "ทุ่งหญ้า", 3: "ป่าทึบ", 4: "ยอดเขา"}
 
     def get_info(self, r, c):
         return {"type": self.mapping[self.template[r][c]], "elevation": self.template[r][c]}
