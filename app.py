@@ -131,7 +131,7 @@ def render_map():
             img[r, c] = [50, 150, 255]
 
     # ===== ขยายภาพ =====
-    img_big = np.kron(img, np.ones((scale,
+    img_big = np.kron(img, np.ones((scale, scale, 1))
 
     display = [["·" for _ in range(15)] for _ in range(15)]
 
