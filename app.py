@@ -92,7 +92,46 @@ def render_map():
 
     grid = st.session_state.vegetation
     st.write("🌱 Food Density")
-    st.heatmap(grid)
+    import numpy as np
+
+def render_map():
+    st.subheader("🌍 World Map (Game Style)")
+
+    size = 15
+    scale = 20
+
+    veg = st.session_state.vegetation
+
+    img = np.zeros((size, size, 3), dtype=np.uint8)
+
+    # ===== สร้างพื้นโลก =====
+    for r in range(size):
+        for c in range(size):
+            v = veg[r][c]
+
+            green = int(100 + v * 1.5)
+            green = min(255, green)
+
+            red = int(50 + v * 0.5)
+            blue = 30
+
+            img[r, c] = [red, green, blue]
+
+    # ===== มนุษย์ =====
+    for h in st.session_state.humans:
+        r, c = h.pos
+        img[r, c] = [255, 255, 255]
+
+    # ===== สัตว์ =====
+    for a in st.session_state.animals:
+        r, c = a.pos
+        if a.a_type == "Carnivore":
+            img[r, c] = [255, 50, 50]
+        else:
+            img[r, c] = [50, 150, 255]
+
+    # ===== ขยายภาพ =====
+    img_big = np.kron(img, np.ones((scale,
 
     display = [["·" for _ in range(15)] for _ in range(15)]
 
