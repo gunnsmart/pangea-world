@@ -19,3 +19,15 @@ class TerrainMap:
             "elevation": self.template[r][c],
             "food_level": self.vegetation[r][c]
         }
+class TerrainMap:
+    # ... (ส่วนเดิม) ...
+    def get_info(self, r, c):
+        info = {
+            "type": self.mapping[self.template[r][c]], 
+            "elevation": self.template[r][c],
+            "food_level": self.vegetation[r][c]
+        }
+        # เพิ่มโอกาสเจอสมุนไพร (Herbs) ในป่าหรือริมน้ำ
+        info["has_herb"] = (self.template[r][c] in [0, 3]) and (random.random() < 0.2)
+        return info
+
