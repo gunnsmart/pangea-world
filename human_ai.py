@@ -188,3 +188,54 @@ class HumanAI:
     # ... (Method update_physics, experiment เดิม) ...
 
 
+class HumanAI:
+    def __init__(self, name, height, mass, partner_name):
+        # ... (Stats เดิม) ...
+        self.has_shelter = False
+        self.shelter_pos = None
+        self.health = 100.0
+        # ...
+
+    def update_physics(self, elevation, partner_pos):
+        # 1. Aging & Physics พื้นฐาน
+        days = (datetime.now() - self.birth_time).total_seconds() / 86400
+        self.age = 25.0 + (days / 365.25)
+        
+        # 2. กฎพลังงาน (dU = dQ - dW)
+        # หากมีที่พัก และอยู่ในตำแหน่งที่พัก จะลดการเสียพลังงานลง 40%
+        work_load = 0.005 * (self.mass / 70.0) * (elevation + 1.2)
+        
+        dist_to_shelter = 0
+        if self.has_shelter and self.shelter_pos:
+            dist_to_shelter = abs(self.pos[0] - self.shelter_pos[0]) + abs(self.pos[1] - self.shelter_pos[1])
+        
+        if self.has_shelter and dist_to_shelter == 0:
+            work_load *= 0.6 # ประสิทธิภาพการพักผ่อนดีขึ้นมาก
+            self.u_energy += 0.01 # ฟื้นฟูพลังงานเล็กน้อยจากการได้พักผ่อนจริงๆ
+            
+        self.u_energy -= work_load
+        self.toxin += 0.001
+        self.libido += 0.002
+        
+        # ... (Bonding Logic เดิม) ...
+
+    def experiment(self):
+        """ ลองเอาของ 2 อย่างมาผสมกัน """
+        if len(self.inventory) >= 2:
+            item1, item2 = random.sample(self.inventory, 2)
+            recipe = "+".join(sorted([item1, item2]))
+            
+            # การค้นพบเพิงพัก (Shelter)
+            if recipe == "กิ่งไม้+ใบไม้ปริศนา":
+                if not self.has_shelter:
+                    self.has_shelter = True
+                    self.shelter_pos = [self.pos[0], self.pos[1]]
+                    self.knowledge[recipe] = "เพิงพักใบไม้"
+                    return f"ค้นพบวิธีสร้าง 'เพิงพักใบไม้' ที่นี่! ร่างกายจะได้พักผ่อนเสียที"
+            
+            # (ผลลัพธ์การผสมอื่นๆ เช่น หอกหิน)
+            # ...
+        return None
+
+
+
