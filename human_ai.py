@@ -61,3 +61,48 @@ class HumanAI:
         
         recent_path = " -> ".join(self.memory)
         return f"ความรู้สึก: {', '.join(feelings) if feelings else 'ปกติ'} | ระดับความผูกพัน: {self.bond:.1f}/100 | สิ่งที่เพิ่งเจอ: {recent_path}"
+
+class HumanAI:
+    def __init__(self, name, height, mass, partner_name):
+        # ... Stats เดิม ...
+        self.inventory = [] # เก็บวัสดุดิบ: "หิน", "กิ่งไม้", "เถาวัลย์"
+        self.knowledge = {} # { "หิน+กิ่งไม้": "หอกไม้ (ประสิทธิภาพ +20)" }
+        self.discovery_points = 0 # คะแนนวิวัฒนาการ
+        self.health = 100.0
+
+    def collect_material(self, terrain_type):
+        """ สุ่มเก็บของตามพื้นที่ (ไม่ต้องสั่ง) """
+        if random.random() < 0.1: # โอกาส 10% ในการเจอวัสดุ
+            mats = {
+                "ริมแม่น้ำ": "หินแม่น้ำ",
+                "ป่าดิบทึบ": "กิ่งไม้แข็ง",
+                "ทุ่งหญ้ากว้าง": "เถาวัลย์"
+            }
+            item = mats.get(terrain_type)
+            if item and item not in self.inventory:
+                self.inventory.append(item)
+
+    def experiment(self):
+        """ ลองเอาของ 2 อย่างใน Inventory มาผสมกันมั่วๆ """
+        if len(self.inventory) >= 2:
+            item1, item2 = random.sample(self.inventory, 2)
+            recipe = "+".join(sorted([item1, item2]))
+            
+            # ตรวจสอบผลลัพธ์ (เราไม่ได้สอน แต่ระบบฟิสิกส์เป็นคนตัดสิน)
+            if recipe == "กิ่งไม้แข็ง+หินแม่น้ำ":
+                res = "หอกหิน"
+                reward = 50
+            elif recipe == "กิ่งไม้แข็ง+เถาวัลย์":
+                res = "กับดักสัตว์"
+                reward = 30
+            else:
+                res = "ขยะ"
+                reward = -10
+            
+            # เรียนรู้
+            if recipe not in self.knowledge:
+                self.knowledge[recipe] = res
+                self.discovery_points += reward
+                return f"ค้นพบวิธีทำ {res} จากการลองผิดลองถูก!"
+        return None
+
