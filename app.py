@@ -11,6 +11,7 @@ from wildlife import spawn_wildlife
 from environment import WeatherSystem
 from terrain import TerrainMap
 from relationship import Relationship
+from body import Body
 
 st.set_page_config(layout="wide", page_title="🧬 Pangea Simulation")
 
@@ -78,6 +79,7 @@ if "initialized" not in st.session_state:
 
     st.session_state.animals      = spawn_wildlife()
     st.session_state.relationship = Relationship('Adam', 'Eve')
+    # Body objects ถูกสร้างภายใน HumanAI แล้ว — เข้าถึงผ่าน h.body
 
     st.session_state.history          = []
     st.session_state.pop_history      = []
@@ -132,6 +134,23 @@ def update_world():
         )
         for ev in need_events:
             st.session_state.history.append(f"Day {st.session_state.day}: {ev}")
+
+        # 🧬 อัปเดตร่างกาย
+        cal_in   = 800 if not h.needs.urgent == 'eat' else 200
+        stressed = h.needs.hunger >= 85 or h.needs.conflict_flag if hasattr(h.needs, 'conflict_flag') else h.needs.hunger >= 85
+        bonded   = dist <= 3
+        body_events = h.body.step_day(
+            calories_in=cal_in,
+            is_active=not h.sleeping,
+            stressed=(h.needs.hunger >= 85),
+            bonded=(dist <= 3),
+        )
+        for ev in body_events:
+            st.session_state.history.append(f'Day {st.session_state.day}: {ev}')
+        # sync health กลับไปที่ HumanAI
+        h.health = h.body.health
+        if not h.body.alive:
+            st.session_state.history.append(f'💀 Day {st.session_state.day}: {h.name} เสียชีวิต')
 
         # ขยับเฉพาะเมื่อตื่น
         if not h.sleeping:
@@ -317,6 +336,40 @@ def render_knowledge():
                     st.caption(f"🔧 {use}")
 
 
+def render_body():
+    st.subheader("🧬 ร่างกาย")
+    for h in st.session_state.humans:
+        s = h.body.summary
+        with st.expander(f"{'♂' if h.sex == 'M' else '♀'} {h.name} — อายุ {s['age']} ปี {'💀' if not h.body.alive else ''}"):
+            c1, c2, c3 = st.columns(3)
+            c1.metric("❤️ สุขภาพ",   s["health"])
+            c2.metric("💪 แรง",       s["strength"])
+            c3.metric("🏃 ความอึด",  s["stamina"])
+
+            c4, c5, c6 = st.columns(3)
+            c4.metric("⚖️ BMI",       s["bmi"])
+            c5.metric("🔥 ไขมัน(kcal)", s["fat_kcal"])
+            c6.metric("😰 ความเครียด", s["cortisol"])
+
+            if h.sex == "F":
+                st.divider()
+                preg_text = f"🤰 ตั้งครรภ์วันที่ {s['days_preg']}/280" if s["pregnant"] else (
+                    "🚫 หมดรอบเดือนแล้ว" if s["menopause"] else
+                    f"🥚 วันที่ {s['cycle_day']}/28 {'(ไข่ตก ✨)' if s['fertile'] else ''}"
+                )
+                st.caption(preg_text)
+                cf, ce = st.columns(2)
+                cf.metric("💊 Estrogen",  s["estrogen"])
+                ce.metric("💊 Oxytocin",  s["oxytocin"])
+            else:
+                ct, co = st.columns(2)
+                ct.metric("💊 Testosterone", s["testosterone"])
+                co.metric("💊 Oxytocin",     s["oxytocin"])
+
+            if s["diseases"]:
+                st.error(f"🤒 โรค: {', '.join(s['diseases'])}")
+
+
 def render_relationship():
     st.subheader("💑 ความสัมพันธ์")
     rel = st.session_state.relationship
@@ -384,6 +437,7 @@ with col_info:
     render_stats()
     render_knowledge()
 
+render_body()
 render_relationship()
 render_chart()
 render_log()
