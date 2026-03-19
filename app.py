@@ -84,8 +84,37 @@ def update_world():
                     f"💡 {h.name} สร้าง '{inv_name}' จาก {items[0]} + {items[1]} — {inv_use}"
                 )
 
+    # ✅ อัปเดตสัตว์ป่าทุกตัวทุก step
+    animals = st.session_state.animals
+    for a in animals:
+        # ดึง elevation จาก terrain (ใช้ค่าคงที่ถ้ายังไม่มี TerrainMap)
+        elevation = 1
+        a.update_life(elevation)
+        a.move()
+
+        # 🥩 Carnivore ล่า Herbivore ที่อยู่ในช่องเดียวกัน
+        if a.a_type == "Carnivore" and a.energy < 400:
+            for prey in animals:
+                if prey.a_type == "Herbivore" and prey.pos == a.pos:
+                    a.energy = min(a.energy + a.energy_gain, 1000.0)
+                    prey.energy -= 200
+                    st.session_state.history.append(
+                        f"🩸 {a.species} ล่า {prey.species} ที่ตำแหน่ง {a.pos}"
+                    )
+                    break
+
+        # 💀 สัตว์ที่พลังงานหมดตาย — เพิ่ม log
+        if a.energy <= 0:
+            st.session_state.history.append(f"💀 {a.species} ตายแล้ว")
+
+    # กำจัดสัตว์ที่ตาย
+    before = len(animals)
+    st.session_state.animals = [a for a in animals if a.energy > 0]
+    if len(st.session_state.animals) < before:
+        pass  # log ทำแล้วข้างบน
+
     st.session_state.pop_history.append(fauna.rabbit_pop)
-    st.session_state.human_pop_history.append(humansys.human_pop)  # ✅ บันทึกทุก step
+    st.session_state.human_pop_history.append(humansys.human_pop)
 
 
 # ===== RENDER MAP =====
