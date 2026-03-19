@@ -113,25 +113,44 @@ def update_world():
     elif humansys.human_pop < prev_pop:
         st.session_state.history.append(f"💀 Day {st.session_state.day}: ประชากรลดเหลือ {humansys.human_pop}")
 
-    # humans move + experiment
+    # humans — สัญชาติญาณ + move + experiment
+    hour     = get_hour_thai()
+    adam_h   = humans[0]
+    eve_h    = humans[1]
+    partners = {adam_h: eve_h, eve_h: adam_h}
+
     for h in humans:
-        h.pos[0] = max(0, min(SIZE - 1, h.pos[0] + random.randint(-2, 2)))
-        h.pos[1] = max(0, min(SIZE - 1, h.pos[1] + random.randint(-2, 2)))
+        partner = partners[h]
 
-        # หลีกเลี่ยงน้ำ
-        info = terrain.get_info(h.pos[0], h.pos[1])
-        if info["is_water"]:
-            h.pos[0] = max(0, min(SIZE - 1, h.pos[0] + random.choice([-1, 1])))
-            h.pos[1] = max(0, min(SIZE - 1, h.pos[1] + random.choice([-1, 1])))
+        # 🧬 อัปเดตสัญชาติญาณ
+        need_events = h.update_needs(
+            hour=hour,
+            partner=partner,
+            has_food=(biomass > 10 or fauna.deer_pop > 5)
+        )
+        for ev in need_events:
+            st.session_state.history.append(f"Day {st.session_state.day}: {ev}")
 
-        if random.random() < 0.1 and len(h.inventory) >= 2:
-            items, stats, invention = h.experiment()
-            if items and invention:
-                inv_name = invention.get("name", f"{items[0]}+{items[1]}")
-                inv_use  = invention.get("use", "")
-                st.session_state.history.append(
-                    f"💡 Day {st.session_state.day}: {h.name} สร้าง '{inv_name}' — {inv_use}"
-                )
+        # ขยับเฉพาะเมื่อตื่น
+        if not h.sleeping:
+            h.pos[0] = max(0, min(SIZE - 1, h.pos[0] + random.randint(-2, 2)))
+            h.pos[1] = max(0, min(SIZE - 1, h.pos[1] + random.randint(-2, 2)))
+
+            # หลีกเลี่ยงน้ำ
+            info = terrain.get_info(h.pos[0], h.pos[1])
+            if info["is_water"]:
+                h.pos[0] = max(0, min(SIZE - 1, h.pos[0] + random.choice([-1, 1])))
+                h.pos[1] = max(0, min(SIZE - 1, h.pos[1] + random.choice([-1, 1])))
+
+            # ทดลองสร้างของเฉพาะตอนว่าง (ไม่หิว ไม่ปวด)
+            if random.random() < 0.1 and len(h.inventory) >= 2:
+                items, stats, invention = h.experiment()
+                if items and invention:
+                    inv_name = invention.get("name", f"{items[0]}+{items[1]}")
+                    inv_use  = invention.get("use", "")
+                    st.session_state.history.append(
+                        f"💡 Day {st.session_state.day}: {h.name} สร้าง '{inv_name}' — {inv_use}"
+                    )
 
     # wildlife move + hunt
     hour    = get_hour_thai()
@@ -261,7 +280,16 @@ def render_stats():
 def render_knowledge():
     st.subheader("🧠 Knowledge")
     for h in st.session_state.humans:
-        with st.expander(h.name):
+        with st.expander(f"{h.name} — {h.needs.status_emoji}"):
+            # status bar
+            st.caption(h.status_bar)
+            n = h.needs
+            cols = st.columns(4)
+            cols[0].metric("🍖 หิว",  f"{n.hunger:.0f}")
+            cols[1].metric("🚽 ปวด",  f"{n.bladder:.0f}")
+            cols[2].metric("💤 ง่วง", f"{n.sleepy:.0f}")
+            cols[3].metric("💕 ใจ",   f"{n.libido:.0f}")
+            st.divider()
             if not h.knowledge:
                 st.write("ยังไม่มีการค้นพบ")
             for items, invention in h.knowledge.items():
