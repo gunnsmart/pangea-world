@@ -3,6 +3,7 @@ import time
 import random
 import numpy as np
 import pandas as pd
+from datetime import datetime, timezone, timedelta
 
 from human_ai import HumanAI
 from biology import PlantEcosystem, FaunaEcosystem, HumanEcosystem
@@ -11,6 +12,23 @@ from environment import WeatherSystem
 from terrain import TerrainMap
 
 st.set_page_config(layout="wide", page_title="🧬 Pangea Simulation")
+
+# ─────────────────────────────────────────────
+# TIMEZONE & TIME UTILS
+# ─────────────────────────────────────────────
+TZ_THAI = timezone(timedelta(hours=7))
+REAL_SECONDS_PER_SIM_DAY = 86400  # 1 วันจริง = 1 วัน sim
+
+def now_thai() -> datetime:
+    return datetime.now(TZ_THAI)
+
+def thai_time_str() -> str:
+    return now_thai().strftime("%d %b %Y  %H:%M:%S")
+
+def elapsed_sim_days(start_ts: float) -> int:
+    """คำนวณวัน sim ที่ควรจะเป็น จากเวลาจริงที่ผ่านไป"""
+    elapsed = time.time() - start_ts
+    return int(elapsed / REAL_SECONDS_PER_SIM_DAY)
 
 # ─────────────────────────────────────────────
 # INIT
@@ -35,6 +53,8 @@ if "initialized" not in st.session_state:
     st.session_state.pop_history      = []
     st.session_state.human_pop_history = []
     st.session_state.day              = 0
+    st.session_state.start_ts          = time.time()   # timestamp เริ่ม sim
+    st.session_state.last_sim_day      = 0             # วัน sim ล่าสุดที่ update แล้ว
     st.session_state.initialized      = True
 
 
@@ -50,7 +70,6 @@ def update_world():
     humans   = st.session_state.humans
     SIZE     = terrain.size
 
-    st.session_state.day += 1
 
     weather.step_day()
     biomass = plants.step_day(weather.global_moisture, weather.global_temperature)
@@ -121,7 +140,7 @@ def update_world():
 # RENDER MAP  (50×50, scale=10px)
 # ─────────────────────────────────────────────
 def render_map():
-    st.subheader(f"🌍 World Map — Day {st.session_state.day}")
+    st.subheader(f"🌍 World Map — Day {st.session_state.day}  |  🕐 {thai_time_str()}")
 
     terrain = st.session_state.terrain
     SIZE    = terrain.size
@@ -210,14 +229,14 @@ def render_chart():
 # ─────────────────────────────────────────────
 st.title("🧬 Pangea Simulation")
 
-# ── Simulation controls ──
-ctrl1, ctrl2, ctrl3 = st.columns([1, 1, 2])
-with ctrl1:
-    run = st.toggle("▶️ Auto Run")
-with ctrl2:
-    step_btn = st.button("⏭ Step +1 Day")
-with ctrl3:
-    speed = st.slider("⏱ Auto speed (วิ/step)", 0.3, 3.0, 1.0, step=0.1)
+# ── Clock display ──
+clock_col, mode_col, step_col = st.columns([2, 1, 1])
+with clock_col:
+    st.info(f"🇹🇭 เวลาไทย: **{thai_time_str()}**  |  🌍 Sim Day: **{st.session_state.day}**")
+with mode_col:
+    run_mode = st.radio("โหมด", ["⏸ Pause", "⏱ Real-time", "⚡ Manual"], horizontal=True)
+with step_col:
+    step_btn = st.button("⏭ +1 Day", disabled=(run_mode != "⚡ Manual"))
 
 # ── Layout ──
 col_map, col_info = st.columns([3, 1])
@@ -233,13 +252,32 @@ render_chart()
 render_log()
 
 # ─────────────────────────────────────────────
-# LOOP
+# LOOP — Real-time clock driven
 # ─────────────────────────────────────────────
-if step_btn:
-    update_world()
+if run_mode == "⏱ Real-time":
+    # คำนวณว่าตอนนี้ควรจะเป็น sim day ที่เท่าไหร่
+    target_day = elapsed_sim_days(st.session_state.start_ts)
+    if target_day > st.session_state.last_sim_day:
+        # ต้อง step ให้ทันกับเวลาจริง (อาจ catchup หลายวันถ้าเปิดทิ้งไว้)
+        steps_needed = target_day - st.session_state.last_sim_day
+        for _ in range(min(steps_needed, 24)):  # cap ที่ 24 steps/rerun ป้องกัน freeze
+            update_world()
+            st.session_state.day += 1
+        st.session_state.last_sim_day = target_day
+    # rerun ทุก 60 วินาที เพื่ออัปเดต clock (ไม่ต้องบ่อยเพราะ 1 วัน = 1 วัน)
+    time.sleep(60)
     st.rerun()
 
-if run:
-    update_world()
-    time.sleep(speed)
+elif run_mode == "⚡ Manual":
+    if step_btn:
+        update_world()
+        st.session_state.day += 1
+        st.session_state.last_sim_day += 1
+        st.rerun()
+    # rerun ทุก 60 วิ เพื่ออัปเดต clock เท่านั้น (ไม่ step sim)
+    time.sleep(60)
+    st.rerun()
+
+else:  # Pause — อัปเดต clock อย่างเดียว
+    time.sleep(60)
     st.rerun()
