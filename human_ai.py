@@ -3,6 +3,7 @@ import os
 import json
 import requests
 from datetime import datetime
+from body import Body
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -56,6 +57,9 @@ class HumanAI:
         self.mass         = mass
         self.birth_time   = datetime.now()
         self.sex          = "M" if name == "Adam" else "F"
+
+        # 🧬 ร่างกาย
+        self.body = Body(name, self.sex, mass, height)
 
         # Stats
         self.age      = 25.0
