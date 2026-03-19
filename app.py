@@ -41,6 +41,7 @@ if "initialized" not in st.session_state:
     # 📜 Logs
     st.session_state.history = []
     st.session_state.pop_history = []
+    st.session_state.human_pop_history = []  # ✅ เพิ่ม track ประชากรมนุษย์
 
     st.session_state.initialized = True
 
@@ -50,11 +51,23 @@ def update_world():
     weather = st.session_state.weather
     plants = st.session_state.plants
     fauna = st.session_state.fauna
+    humansys = st.session_state.humansys  # ✅ ดึง humansys มาใช้
     humans = st.session_state.humans
 
     weather.step_day()
     biomass = plants.step_day(weather.global_moisture, weather.global_temperature)
     fauna.step_day(biomass)
+
+    # ✅ เรียก HumanEcosystem.step_day() โดยส่ง biomass และจำนวนกวางปัจจุบัน
+    hunted = humansys.step_day(biomass, fauna.deer_pop)
+    fauna.deer_pop = max(0, fauna.deer_pop - hunted)  # ✅ หักกวางที่ถูกล่าออกจาก FaunaEcosystem
+
+    # log เมื่อประชากรมนุษย์เปลี่ยน
+    prev_pop = st.session_state.human_pop_history[-1] if st.session_state.human_pop_history else 2
+    if humansys.human_pop > prev_pop:
+        st.session_state.history.append(f"👶 Human population grew to {humansys.human_pop}")
+    elif humansys.human_pop < prev_pop:
+        st.session_state.history.append(f"💀 Human population dropped to {humansys.human_pop}")
 
     for h in humans:
         # move
@@ -67,12 +80,10 @@ def update_world():
             if items:
                 name = f"{items[0]}+{items[1]}"
                 h.knowledge[tuple(items)] = name
-
-                st.session_state.history.append(
-                    f"💡 {h.name} discovered {name}"
-                )
+                st.session_state.history.append(f"💡 {h.name} discovered {name}")
 
     st.session_state.pop_history.append(fauna.rabbit_pop)
+    st.session_state.human_pop_history.append(humansys.human_pop)  # ✅ บันทึกทุก step
 
 
 # ===== RENDER MAP =====
@@ -89,14 +100,12 @@ def render_map():
     for r in range(size):
         for c in range(size):
             v = veg[r][c]
-
             if v > 80:
-                color = [34, 139, 34]   # forest
+                color = [34, 139, 34]    # forest
             elif v > 60:
-                color = [50, 180, 50]   # grass
+                color = [50, 180, 50]    # grass
             else:
-                color = [139, 119, 101] # dirt
-
+                color = [139, 119, 101]  # dirt
             img[r, c] = color
 
     # 🧠 Humans
@@ -111,7 +120,6 @@ def render_map():
         r, c = a.pos
         r = max(0, min(size-1, r))
         c = max(0, min(size-1, c))
-
         if a.a_type == "Carnivore":
             img[r, c] = [255, 50, 50]
         else:
@@ -119,16 +127,12 @@ def render_map():
 
     # 🔍 scale
     img_big = np.kron(img, np.ones((scale, scale, 1))).astype(np.uint8)
-
-    # ✅ SHOW MAP (ตัวสำคัญ)
     st.image(img_big, use_container_width=True)
 
     # 🧭 text map
     display = [["·" for _ in range(size)] for _ in range(size)]
-
     for h in st.session_state.humans:
         display[h.pos[0]][h.pos[1]] = "🧑"
-
     for a in st.session_state.animals:
         display[a.pos[0]][a.pos[1]] = a.icon
 
@@ -141,6 +145,7 @@ def render_map():
 def render_stats():
     fauna = st.session_state.fauna
     weather = st.session_state.weather
+    humansys = st.session_state.humansys  # ✅ เพิ่ม
 
     st.subheader("📊 Stats")
 
@@ -148,6 +153,7 @@ def render_stats():
 
     col1.metric("🐰 Rabbits", fauna.rabbit_pop)
     col1.metric("🦌 Deer", fauna.deer_pop)
+    col1.metric("🧑 Humans", humansys.human_pop)  # ✅ แสดงประชากรมนุษย์
 
     col2.metric("🐯 Tigers", fauna.tiger_pop)
     col2.metric("🌡 Temp", weather.global_temperature)
@@ -157,7 +163,6 @@ def render_stats():
 
 def render_knowledge():
     st.subheader("🧠 Knowledge")
-
     for h in st.session_state.humans:
         with st.expander(h.name):
             for items, result in h.knowledge.items():
@@ -166,14 +171,23 @@ def render_knowledge():
 
 def render_log():
     st.subheader("📜 Events")
-
     for e in reversed(st.session_state.history[-10:]):
         st.write(e)
 
 
 def render_chart():
     st.subheader("📈 Population Trend")
-    st.line_chart(st.session_state.pop_history)
+    # ✅ แสดงทั้ง rabbit และ human population
+    chart_data = {
+        "🐰 Rabbits": st.session_state.pop_history,
+        "🧑 Humans": st.session_state.human_pop_history,
+    }
+    import pandas as pd
+    max_len = max(len(v) for v in chart_data.values())
+    df = pd.DataFrame({
+        k: v + [None] * (max_len - len(v)) for k, v in chart_data.items()
+    })
+    st.line_chart(df)
 
 
 # ===== MAIN UI =====
