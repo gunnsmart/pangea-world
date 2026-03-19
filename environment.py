@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 # ── ฤดูกาล (อิง Day of Year) ──────────────────────────────────────────────
+# (start, end, label, temp_mod, rain_mod)
 SEASONS = [
-    (  0,  89, "🌸 ฤดูใบไม้ผลิ", temp_mod=+2.0,  rain_mod=+1.5),
-    ( 90, 179, "☀️ ฤดูร้อน",      temp_mod=+6.0,  rain_mod=-1.0),
-    (180, 269, "🍂 ฤดูใบไม้ร่วง", temp_mod=+0.0,  rain_mod=+0.5),
-    (270, 365, "❄️ ฤดูหนาว",      temp_mod=-5.0,  rain_mod=-0.5),
+    (  0,  89, "🌸 ฤดูใบไม้ผลิ", +2.0, +1.5),
+    ( 90, 179, "☀️ ฤดูร้อน",      +6.0, -1.0),
+    (180, 269, "🍂 ฤดูใบไม้ร่วง",  0.0, +0.5),
+    (270, 365, "❄️ ฤดูหนาว",      -5.0, -0.5),
 ]
 
 def get_season(day: int) -> dict:
@@ -265,5 +266,4 @@ class DisasterSystem:
             {"label": d.label, "severity": d.severity,
              "days_left": d.duration, "center": d.center}
             for d in self.active_disasters if d.active
-    ]
-        
+        ]
