@@ -134,20 +134,22 @@ def update_world():
                 )
 
     # wildlife move + hunt
+    hour    = get_hour_thai()
     animals = st.session_state.animals
     for a in animals:
-        info = terrain.get_info(a.pos[0], a.pos[1])
+        info      = terrain.get_info(a.pos[0], a.pos[1])
         elevation = info["elevation"]
-        a.update_life(elevation)
-        a.move()
+        a.update_life(elevation, hour)   # ✅ ส่ง hour
+        a.move(size=SIZE)                # ✅ ส่ง size, จะไม่ขยับถ้า sleeping
 
-        # หลีกเลี่ยงน้ำ (สำหรับ herbivore)
-        if a.a_type == "Herbivore" and info["is_water"]:
-            a.move()
+        # หลีกเลี่ยงน้ำ (เฉพาะ Herbivore ที่ตื่น)
+        if not a.sleeping and a.a_type == "Herbivore" and info["is_water"]:
+            a.move(size=SIZE)
 
-        if a.a_type == "Carnivore" and a.energy < 400:
+        # ล่า — เฉพาะ Carnivore ที่ตื่น
+        if not a.sleeping and a.a_type == "Carnivore" and a.energy < 400:
             for prey in animals:
-                if prey.a_type == "Herbivore" and prey.pos == a.pos:
+                if not prey.sleeping and prey.a_type == "Herbivore" and prey.pos == a.pos:
                     a.energy = min(a.energy + a.energy_gain, 1000.0)
                     prey.energy -= 200
                     st.session_state.history.append(
@@ -207,10 +209,15 @@ def render_map():
         r, c = max(0, min(SIZE-1, h.pos[0])), max(0, min(SIZE-1, h.pos[1]))
         img[r, c] = [255, 255, 255]
 
-    # animals
+    # animals — สีต่างกันระหว่าง active/sleeping
     for a in st.session_state.animals:
         r, c = max(0, min(SIZE-1, a.pos[0])), max(0, min(SIZE-1, a.pos[1]))
-        img[r, c] = [255, 50, 50] if a.a_type == "Carnivore" else [255, 220, 50]
+        if a.sleeping:
+            img[r, c] = [100, 100, 120]   # เทา = กำลังหลับ
+        elif a.a_type == "Carnivore":
+            img[r, c] = [255, 50, 50]     # แดง = Carnivore ตื่น
+        else:
+            img[r, c] = [255, 220, 50]    # เหลือง = Herbivore ตื่น
 
     # 🌙 Night overlay
     phase = get_day_phase()
@@ -219,7 +226,7 @@ def render_map():
     st.image(img_big, use_container_width=True)
 
     # phase + legend
-    st.caption(f"{phase['label']}  |  ⬜ มนุษย์  🟡 Herbivore  🔴 Carnivore  🔵 น้ำ  🟢 ป่า  🟤 ภูเขา")
+    st.caption(f"{phase['label']}  |  ⬜ มนุษย์  🟡 Herbivore(ตื่น)  🔴 Carnivore(ตื่น)  🔘 หลับ  🔵 น้ำ  🟢 ป่า  🟤 ภูเขา")
 
 
 # ─────────────────────────────────────────────
