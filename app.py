@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 from human_ai import HumanAI
-from biology import PlantEcosystem, FaunaEcosystem, HumanEcosystem
+from biology import PlantEcosystem, FaunaEcosystem, HumanEcosystem, GESTATION_DAYS
 from wildlife import spawn_wildlife
 from environment import WeatherSystem
 from terrain import TerrainMap
@@ -241,9 +241,16 @@ def render_stats():
     c1, c2 = st.columns(2)
     c1.metric("🐰 Rabbits",  fauna.rabbit_pop)
     c1.metric("🦌 Deer",     fauna.deer_pop)
-    c1.metric("🧑 Humans",   humansys.human_pop)
+    c1.metric("👥 Humans",   humansys.human_pop)
     c2.metric("🐯 Tigers",   fauna.tiger_pop)
     c2.metric("🦅 Eagles",   fauna.eagle_pop)
+    # แสดงรายละเอียดประชากรมนุษย์
+    st.caption(humansys.summary)
+    if humansys.pregnant_count > 0:
+        days_left = GESTATION_DAYS - max(
+            (p.days_pregnant for p in humansys.pregnancies if p.pregnant), default=0
+        )
+        st.caption(f"🤰 คาดคลอดใน ~{days_left} วัน")
     _phase = get_day_phase()
     c2.metric("🌡 Temp", f"{weather.global_temperature + _phase['temp_mod']:.1f}°C",
               delta=f"{_phase['temp_mod']:+.1f}°C" if _phase['temp_mod'] != 0 else None)
