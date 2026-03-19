@@ -10,6 +10,7 @@ from biology import PlantEcosystem, FaunaEcosystem, HumanEcosystem, GESTATION_DA
 from wildlife import spawn_wildlife
 from environment import WeatherSystem
 from terrain import TerrainMap
+from relationship import Relationship
 
 st.set_page_config(layout="wide", page_title="🧬 Pangea Simulation")
 
@@ -75,7 +76,8 @@ if "initialized" not in st.session_state:
     eve.inventory  = random.sample(base_items, 3)
     st.session_state.humans = [adam, eve]
 
-    st.session_state.animals = spawn_wildlife()
+    st.session_state.animals      = spawn_wildlife()
+    st.session_state.relationship = Relationship('Adam', 'Eve')
 
     st.session_state.history          = []
     st.session_state.pop_history      = []
@@ -151,6 +153,21 @@ def update_world():
                     st.session_state.history.append(
                         f"💡 Day {st.session_state.day}: {h.name} สร้าง '{inv_name}' — {inv_use}"
                     )
+
+    # ── ความสัมพันธ์ Adam & Eve ──────────────────────────────────
+    rel   = st.session_state.relationship
+    adam_h = humans[0]
+    eve_h  = humans[1]
+    dist   = abs(adam_h.pos[0]-eve_h.pos[0]) + abs(adam_h.pos[1]-eve_h.pos[1])
+    mated  = ('💕' in adam_h.current_action)
+    rel_events = rel.step_day(
+        dist=dist,
+        mated_today=mated,
+        a_hungry=(adam_h.needs.hunger >= 85),
+        b_hungry=(eve_h.needs.hunger  >= 85),
+    )
+    for ev in rel_events:
+        st.session_state.history.append(f'Day {st.session_state.day}: {ev}')
 
     # wildlife move + hunt
     hour    = get_hour_thai()
@@ -300,6 +317,28 @@ def render_knowledge():
                     st.caption(f"🔧 {use}")
 
 
+def render_relationship():
+    st.subheader("💑 ความสัมพันธ์")
+    rel = st.session_state.relationship
+    s   = rel.summary
+
+    st.markdown(f"### {s['stage']}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("❤️ Bond",     s["bond"],     delta=None)
+    c2.metric("🤝 Trust",    s["trust"],    delta=None)
+    c3.metric("⚔️ Conflict", s["conflict"], delta=None)
+
+    col_a, col_b = st.columns(2)
+    col_a.caption(f"📅 อยู่ด้วยกัน {s['together']} วัน")
+    col_b.caption(f"💕 ใกล้ชิด {s['mate']} ครั้ง")
+
+    if rel.recent_memories:
+        st.caption("🧠 ความทรงจำล่าสุด")
+        for m in rel.recent_memories:
+            icon = "💚" if m.sentiment > 0 else "🔴"
+            st.write(f"{icon} Day {m.day}: {m.event}")
+
+
 def render_log():
     st.subheader("📜 Events")
     for e in reversed(st.session_state.history[-15:]):
@@ -345,6 +384,7 @@ with col_info:
     render_stats()
     render_knowledge()
 
+render_relationship()
 render_chart()
 render_log()
 
