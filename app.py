@@ -31,6 +31,34 @@ def elapsed_sim_days(start_ts: float) -> int:
     return int(elapsed / REAL_SECONDS_PER_SIM_DAY)
 
 # ─────────────────────────────────────────────
+# DAY / NIGHT SYSTEM
+# ─────────────────────────────────────────────
+def get_hour_thai() -> int:
+    """ชั่วโมงปัจจุบันในโซน UTC+7 (0–23)"""
+    return now_thai().hour
+
+def get_day_phase() -> dict:
+    """คืนข้อมูล phase กลางวัน/กลางคืน จากเวลาไทยจริง"""
+    h = get_hour_thai()
+    if 6 <= h < 8:
+        return {"phase": "dawn",    "label": "🌅 รุ่งอรุณ",    "brightness": 0.65, "temp_mod": -1.0}
+    elif 8 <= h < 17:
+        return {"phase": "day",     "label": "☀️ กลางวัน",     "brightness": 1.0,  "temp_mod":  0.0}
+    elif 17 <= h < 19:
+        return {"phase": "dusk",    "label": "🌇 โพล้เย็น",    "brightness": 0.65, "temp_mod": -0.5}
+    elif 19 <= h < 22:
+        return {"phase": "evening", "label": "🌃 หัวค่ำ",       "brightness": 0.35, "temp_mod": -1.5}
+    else:
+        return {"phase": "night",   "label": "🌙 กลางคืน",     "brightness": 0.15, "temp_mod": -3.0}
+
+def apply_night_overlay(img: "np.ndarray", brightness: float) -> "np.ndarray":
+    """หรี่แสง map ตาม brightness (0.0–1.0) — เพิ่ม blue tint กลางคืน"""
+    result = img.astype(np.float32) * brightness
+    if brightness < 0.5:  # กลางคืน — เพิ่ม blue tint
+        result[:, :, 2] = np.clip(result[:, :, 2] + (1 - brightness) * 30, 0, 255)
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+# ─────────────────────────────────────────────
 # INIT
 # ─────────────────────────────────────────────
 if "initialized" not in st.session_state:
@@ -132,6 +160,27 @@ def update_world():
 
     st.session_state.animals = [a for a in animals if a.energy > 0]
 
+    # 🌙 Night events — เกิดเฉพาะช่วง 22:00–05:00
+    phase = get_day_phase()
+    if phase["phase"] == "night":
+        # อุณหภูมิลดพิเศษตอนกลางคืน
+        weather.global_temperature = max(20.0, weather.global_temperature + phase["temp_mod"])
+        # Carnivore ได้เปรียบตอนกลางคืน — โอกาสล่าเพิ่มขึ้น
+        for a in st.session_state.animals:
+            if a.a_type == "Carnivore" and random.random() < 0.25:
+                for prey in st.session_state.animals:
+                    if prey.a_type == "Herbivore" and abs(a.pos[0]-prey.pos[0]) <= 2 and abs(a.pos[1]-prey.pos[1]) <= 2:
+                        a.energy = min(a.energy + a.energy_gain * 0.5, 1000.0)
+                        prey.energy -= 150
+                        st.session_state.history.append(
+                            f"🌙 Day {st.session_state.day}: {a.species} ล่ากลางคืน {prey.species}"
+                        )
+                        break
+        # ฝนคืน — เพิ่มความชื้น
+        if random.random() < 0.3:
+            weather.global_moisture = min(90.0, weather.global_moisture + 2.0)
+            st.session_state.history.append(f"🌧 Day {st.session_state.day}: ฝนตกกลางคืน")
+
     st.session_state.pop_history.append(fauna.rabbit_pop)
     st.session_state.human_pop_history.append(humansys.human_pop)
 
@@ -163,11 +212,14 @@ def render_map():
         r, c = max(0, min(SIZE-1, a.pos[0])), max(0, min(SIZE-1, a.pos[1]))
         img[r, c] = [255, 50, 50] if a.a_type == "Carnivore" else [255, 220, 50]
 
+    # 🌙 Night overlay
+    phase = get_day_phase()
     img_big = np.kron(img, np.ones((scale, scale, 1))).astype(np.uint8)
+    img_big = apply_night_overlay(img_big, phase["brightness"])
     st.image(img_big, use_container_width=True)
 
-    # legend
-    st.caption("⬜ มนุษย์  🟡 Herbivore  🔴 Carnivore  🔵 น้ำ  🟢 ป่า/ทุ่งหญ้า  🟤 ภูเขา")
+    # phase + legend
+    st.caption(f"{phase['label']}  |  ⬜ มนุษย์  🟡 Herbivore  🔴 Carnivore  🔵 น้ำ  🟢 ป่า  🟤 ภูเขา")
 
 
 # ─────────────────────────────────────────────
@@ -185,7 +237,9 @@ def render_stats():
     c1.metric("🧑 Humans",   humansys.human_pop)
     c2.metric("🐯 Tigers",   fauna.tiger_pop)
     c2.metric("🦅 Eagles",   fauna.eagle_pop)
-    c2.metric("🌡 Temp",     f"{weather.global_temperature:.1f}°C")
+    _phase = get_day_phase()
+    c2.metric("🌡 Temp", f"{weather.global_temperature + _phase['temp_mod']:.1f}°C",
+              delta=f"{_phase['temp_mod']:+.1f}°C" if _phase['temp_mod'] != 0 else None)
     st.write("🌦", weather.current_state)
     st.write(f"💧 Moisture: {weather.global_moisture:.1f}")
 
@@ -232,7 +286,8 @@ st.title("🧬 Pangea Simulation")
 # ── Clock display ──
 clock_col, mode_col, step_col = st.columns([2, 1, 1])
 with clock_col:
-    st.info(f"🇹🇭 เวลาไทย: **{thai_time_str()}**  |  🌍 Sim Day: **{st.session_state.day}**")
+    _ph = get_day_phase()
+    st.info(f"🇹🇭 เวลาไทย: **{thai_time_str()}**  |  🌍 Sim Day: **{st.session_state.day}**  |  {_ph['label']}")
 with mode_col:
     run_mode = st.radio("โหมด", ["⏸ Pause", "⏱ Real-time", "⚡ Manual"], horizontal=True)
 with step_col:
