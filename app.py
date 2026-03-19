@@ -76,11 +76,13 @@ def update_world():
 
         # discovery
         if random.random() < 0.1 and len(h.inventory) >= 2:
-            items, stats = h.experiment()
-            if items:
-                name = f"{items[0]}+{items[1]}"
-                h.knowledge[tuple(items)] = name
-                st.session_state.history.append(f"💡 {h.name} discovered {name}")
+            items, stats, invention = h.experiment()
+            if items and invention:
+                inv_name = invention.get("name", f"{items[0]}+{items[1]}")
+                inv_use  = invention.get("use", "")
+                st.session_state.history.append(
+                    f"💡 {h.name} สร้าง '{inv_name}' จาก {items[0]} + {items[1]} — {inv_use}"
+                )
 
     st.session_state.pop_history.append(fauna.rabbit_pop)
     st.session_state.human_pop_history.append(humansys.human_pop)  # ✅ บันทึกทุก step
@@ -165,8 +167,14 @@ def render_knowledge():
     st.subheader("🧠 Knowledge")
     for h in st.session_state.humans:
         with st.expander(h.name):
-            for items, result in h.knowledge.items():
-                st.write(f"{items} → {result}")
+            if not h.knowledge:
+                st.write("ยังไม่มีการค้นพบ")
+            for items, invention in h.knowledge.items():
+                name = invention.get("name", "?") if isinstance(invention, dict) else invention
+                use  = invention.get("use", "")  if isinstance(invention, dict) else ""
+                st.write(f"**{name}** — {items[0]} + {items[1]}")
+                if use:
+                    st.caption(f"🔧 {use}")
 
 
 def render_log():
