@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+websockets
+numpy
+pandas
+requests
+groq
+psycopg2-binary
