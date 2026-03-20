@@ -329,3 +329,4 @@ function setBar(barId, valId, val, max, color) {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 connect();
+                
