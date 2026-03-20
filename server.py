@@ -32,6 +32,12 @@ from terrain import TerrainMap
 from relationship import Relationship
 from physics_engine import WorldPhysics
 from fire_system import FireSystem
+from database import (
+     init_db, save_snapshot, load_latest_snapshot,
+     save_human_memory, load_human_memory,
+     record_timeseries, get_timeseries,
+     get_event_log, event_buffer,
+)
 import random
 import numpy as np
 
