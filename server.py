@@ -1,3 +1,14 @@
+import sys, traceback
+print("Python:", sys.version)
+
+try:
+    import brain, body, human_ai, biology, wildlife
+    import terrain, environment, senses
+    import physics_engine, fire_system, relationship, database
+    print("All imports OK")
+except Exception as e:
+    print("IMPORT ERROR:", e)
+    traceback.print_exc()
 """
 server.py — FastAPI + WebSocket backend
 ════════════════════════════════════════
