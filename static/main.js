@@ -9,14 +9,44 @@ let ws        = null;
 let lastState = null;
 let popHistory= [];
 
-// ── WebSocket ────────────────────────────────────────────────────────────────
+// ── WebSocket + REST fallback ────────────────────────────────────────────────
+let useRest = false;   // fallback mode
+let restTimer = null;
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen    = () => { console.log('WS connected'); updateDot(true); };
-  ws.onclose   = () => { updateDot(false); setTimeout(connect, 3000); };
-  ws.onerror   = (e) => console.error('WS error', e);
+  // timeout 5 วิ — ถ้า WS ไม่ได้ switch ไป REST
+  const timeout = setTimeout(() => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      console.warn('WS timeout — switching to REST polling');
+      ws.close();
+      startRestPolling();
+    }
+  }, 5000);
+
+  ws.onopen = () => {
+    clearTimeout(timeout);
+    useRest = false;
+    stopRestPolling();
+    console.log('WS connected ✅');
+    updateDot(true);
+  };
+
+  ws.onclose = () => {
+    clearTimeout(timeout);
+    updateDot(false);
+    // ลอง WS ใหม่ทุก 10 วิ ถ้าไม่ได้ใช้ REST แทน
+    setTimeout(connect, 10000);
+    if (!useRest) startRestPolling();
+  };
+
+  ws.onerror = () => {
+    clearTimeout(timeout);
+    startRestPolling();
+  };
+
   ws.onmessage = (e) => {
     try {
       const state = JSON.parse(e.data);
@@ -24,6 +54,33 @@ function connect() {
       render(state);
     } catch(err) { console.error('parse error', err); }
   };
+}
+
+// ── REST Polling fallback (ทุก 3 วิ) ─────────────────────────────────────────
+function startRestPolling() {
+  if (restTimer) return;
+  useRest = true;
+  updateDot(true);
+  console.log('REST polling started');
+  fetchState();
+  restTimer = setInterval(fetchState, 3000);
+}
+
+function stopRestPolling() {
+  if (restTimer) { clearInterval(restTimer); restTimer = null; }
+  useRest = false;
+}
+
+async function fetchState() {
+  try {
+    const res   = await fetch('/api/state');
+    const state = await res.json();
+    lastState   = state;
+    render(state);
+  } catch(e) {
+    console.error('REST fetch error', e);
+    updateDot(false);
+  }
 }
 
 function sendCmd(cmd) {
