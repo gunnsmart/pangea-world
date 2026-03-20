@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧬 Pangea</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sarabun:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:       #0a0e14;
+    --panel:    #111720;
+    --border:   #1e2d3d;
+    --accent:   #00d4ff;
+    --green:    #39ff14;
+    --orange:   #ff6b2b;
+    --red:      #ff2d55;
+    --text:     #c8d8e8;
+    --dim:      #4a6080;
+    --gold:     #ffd700;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 48px 1fr;
+    grid-template-columns: 1fr 300px;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  /* ── Header ── */
+  header {
+    grid-column: 1 / -1;
+    background: var(--panel);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo { font-family: 'Space Mono', monospace; color: var(--accent); font-size: 15px; }
+  .clock { font-family: 'Space Mono', monospace; color: var(--gold); font-size: 12px; }
+  .phase { font-size: 12px; color: var(--dim); }
+
+  .controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 14px;
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    transition: all 0.15s;
+    border-radius: 3px;
+  }
+  button:hover  { border-color: var(--accent); color: var(--accent); }
+  button.active { border-color: var(--green);  color: var(--green); }
+  button.danger { border-color: var(--red);    color: var(--red); }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dim); transition: background 0.3s;
+  }
+  .status-dot.running { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  /* ── Main area ── */
+  main {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #map-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    min-height: 0;
+  }
+
+  #map-canvas {
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .map-legend {
+    padding: 4px 12px;
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--dim);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  /* ── Right panel ── */
+  aside {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .tab {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--dim);
+    transition: all 0.15s;
+    border-bottom: 2px solid transparent;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: none;
+  }
+  .tab-content.active { display: block; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Widgets ── */
+  .section { margin-bottom: 14px; }
+  .section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .metric {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    border-radius: 3px;
+  }
+  .metric-label { font-size: 10px; color: var(--dim); }
+  .metric-value { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text); }
+
+  /* drive bar */
+  .drive-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .drive-label { width: 55px; font-size: 11px; color: var(--dim); flex-shrink: 0; }
+  .drive-bar-wrap { flex: 1; background: var(--bg); height: 5px; border-radius: 3px; overflow: hidden; }
+  .drive-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
+  .drive-val { width: 28px; text-align: right; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--dim); }
+
+  /* human card */
+  .human-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: var(--bg);
+  }
+  .human-header {
+    display: flex; justify-content: space-between;
+    margin-bottom: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+  }
+  .human-name { color: var(--gold); }
+  .human-action { font-size: 10px; color: var(--green); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* log */
+  #log-list { font-size: 11px; line-height: 1.8; }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid var(--border); color: var(--dim); }
+  .log-entry:last-child { color: var(--text); }
+
+  /* mini chart */
+  #chart-canvas { width: 100%; height: 80px; }
+
+  /* disaster alert */
+  .alert {
+    background: rgba(255,45,85,0.1);
+    border: 1px solid var(--red);
+    border-radius: 3px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--red);
+  }
+
+  /* game over */
+  #game-over-banner {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  #game-over-banner.show { display: flex; }
+  #game-over-banner h1 { font-size: 36px; color: var(--red); font-family: 'Space Mono', monospace; }
+  #game-over-banner p  { color: var(--dim); margin-top: 8px; }
+  #game-over-banner button { margin-top: 20px; padding: 10px 32px; font-size: 14px; }
+
+  .badge {
+    display: inline-block; padding: 1px 6px;
+    border-radius: 10px; font-size: 10px;
+    background: var(--border); color: var(--text);
+  }
+  .badge.green { background: rgba(57,255,20,0.15); color: var(--green); }
+  .badge.red   { background: rgba(255,45,85,0.15);  color: var(--red); }
+
+  .relationship-bar {
+    display: flex; gap: 6px; margin-bottom: 4px; align-items: center;
+  }
+  .rel-label { width: 65px; font-size: 11px; color: var(--dim); }
+  .rel-bar-wrap { flex: 1; background: var(--bg); height: 6px; border-radius: 3px; overflow: hidden; }
+  .rel-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
+
+  .skill-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; border-bottom: 1px solid var(--border); }
+  .skill-name { color: var(--dim); }
+  .skill-val  { font-family: 'Space Mono', monospace; color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🧬 PANGEA</div>
+  <div class="status-dot" id="status-dot"></div>
+  <div class="clock" id="clock">--:--:--</div>
+  <div class="phase" id="phase">--</div>
+  <span class="badge" id="day-badge">Day 0</span>
+  <span class="badge" id="season-badge">--</span>
+  <div class="controls">
+    <button id="btn-start" onclick="sendCmd('start')">▶ Start</button>
+    <button id="btn-pause" onclick="sendCmd('pause')">⏸ Pause</button>
+    <button id="btn-step"  onclick="sendCmd('step')">⏭ Step</button>
+    <button class="danger" onclick="sendCmd('reset')">↺ Reset</button>
+  </div>
+</header>
+
+<main>
+  <div id="map-container">
+    <canvas id="map-canvas" width="500" height="500"></canvas>
+  </div>
+  <div class="map-legend">
+    <span>⬜ มนุษย์</span>
+    <span>🟡 Herbivore</span>
+    <span>🔴 Carnivore</span>
+    <span>🔘 หลับ</span>
+    <span>🟠 ไฟ</span>
+    <span>🔵 น้ำ</span>
+    <span>🟢 ป่า</span>
+    <span>🟤 ภูเขา</span>
+  </div>
+  <div id="game-over-banner">
+    <h1>🌑 EXTINCTION</h1>
+    <p>Adam และ Eve สูญพันธุ์แล้ว</p>
+    <button class="danger" onclick="sendCmd('reset')">↺ เริ่มใหม่</button>
+  </div>
+</main>
+
+<aside>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('stats')">📊</div>
+    <div class="tab" onclick="switchTab('humans')">🧑</div>
+    <div class="tab" onclick="switchTab('eco')">🌿</div>
+    <div class="tab" onclick="switchTab('log')">📜</div>
+  </div>
+
+  <!-- STATS -->
+  <div class="tab-content active" id="tab-stats">
+    <div class="section">
+      <div class="section-title">🌦 Environment</div>
+      <div class="metric-grid">
+        <div class="metric"><div class="metric-label">🌡 Temp</div><div class="metric-value" id="s-temp">--</div></div>
+        <div class="metric"><div class="metric-label">💧 Moisture</div><div class="metric-value" id="s-moisture">--</div></div>
+        <div class="metric"><div class="metric-label">☁️ Weather</div><div class="metric-value" id="s-weather" style="font-size:11px">--</div></div>
+        <div class="metric"><div class="metric-label">🌿 Biomass</div><div class="metric-value" id="s-biomass">--</div></div>
+      </div>
+    </div>
+    <div class="section" id="disaster-section"></div>
+    <div class="section">
+      <div class="section-title">🐾 Wildlife</div>
+      <div class="metric-grid">
+        <div class="metric"><div class="metric-label">🐰 Rabbits</div><div class="metric-value" id="s-rabbit">--</div></div>
+        <div class="metric"><div class="metric-label">🦌 Deer</div><div class="metric-value" id="s-deer">--</div></div>
+        <div class="metric"><div class="metric-label">🐯 Tigers</div><div class="metric-value" id="s-tiger">--</div></div>
+        <div class="metric"><div class="metric-label">🦅 Eagles</div><div class="metric-value" id="s-eagle">--</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">📈 Population</div>
+      <canvas id="chart-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- HUMANS -->
+  <div class="tab-content" id="tab-humans">
+    <div id="humans-container"></div>
+    <div class="section">
+      <div class="section-title">💑 Relationship</div>
+      <div id="rel-stage" style="text-align:center;font-size:18px;padding:6px 0">--</div>
+      <div class="relationship-bar">
+        <div class="rel-label">❤️ Bond</div>
+        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-bond" style="width:0%;background:#ff6b9d"></div></div>
+        <div class="drive-val" id="rel-bond-val">0</div>
+      </div>
+      <div class="relationship-bar">
+        <div class="rel-label">🤝 Trust</div>
+        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-trust" style="width:0%;background:#00d4ff"></div></div>
+        <div class="drive-val" id="rel-trust-val">0</div>
+      </div>
+      <div class="relationship-bar">
+        <div class="rel-label">⚔️ Conflict</div>
+        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-conflict" style="width:0%;background:#ff2d55"></div></div>
+        <div class="drive-val" id="rel-conflict-val">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ECO -->
+  <div class="tab-content" id="tab-eco">
+    <div class="section">
+      <div class="section-title">🌍 Atmosphere</div>
+      <div class="metric-grid" id="atmo-grid"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">🔥 Active Fires</div>
+      <div id="fire-info" style="font-size:11px;color:var(--dim)">ไม่มีกองไฟ</div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="tab-content" id="tab-log">
+    <div id="log-list"></div>
+  </div>
+</aside>
+
+<script src="/static/main.js"></script>
+</body>
+</html>
