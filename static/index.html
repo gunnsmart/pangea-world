@@ -267,6 +267,11 @@
   .skill-name { color: var(--dim); }
   .skill-val  { font-family: 'Space Mono', monospace; color: var(--text); }
 
+  /* Dialogue panel */
+  #dialogue-panel { display: flex; flex-direction: column; gap: 4px; }
+  .dialogue-entry { padding: 4px 6px; background: var(--bg); border-left: 2px solid var(--accent); border-radius: 2px; font-size: 11px; line-height: 1.4; color: var(--text); }
+  .dialogue-entry strong { color: var(--gold); }
+
   /* ══════════════════════════════════════════════════════════════════════════════
      RESPONSIVE DESIGN
      ══════════════════════════════════════════════════════════════════════════════ */
@@ -564,6 +569,7 @@
     <div class="tab active" onclick="switchTab('stats')">📊</div>
     <div class="tab" onclick="switchTab('humans')">🧑</div>
     <div class="tab" onclick="switchTab('eco')">🌿</div>
+    <div class="tab" onclick="switchTab('dialogue')">💬</div>
     <div class="tab" onclick="switchTab('log')">📜</div>
   </div>
 
@@ -627,6 +633,14 @@
     <div class="section">
       <div class="section-title">🔥 Active Fires</div>
       <div id="fire-info" style="font-size:11px;color:var(--dim)">ไม่มีกองไฟ</div>
+    </div>
+  </div>
+
+  <!-- DIALOGUE -->
+  <div class="tab-content" id="tab-dialogue">
+    <div class="section">
+      <div class="section-title">💬 Speech & Language</div>
+      <div id="dialogue-panel" style="font-size:11px; max-height:100%; overflow-y:auto;"></div>
     </div>
   </div>
 

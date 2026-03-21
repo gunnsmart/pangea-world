@@ -52,15 +52,16 @@ BIOME_ELEVATION_M = {
 # SIMULATION STATE — shared between sim thread and WebSocket handlers
 # ══════════════════════════════════════════════════════════════════════════════
 TZ_THAI = timezone(timedelta(hours=7))
-# ── Time Scale ────────────────────────────────────────────────────────────
-# 1 ชั่วโมงจริง = 1 วัน sim
-# 1 วัน sim = 24 ชั่วโมง sim → step ทุก 150 วินาที = 1 ชั่วโมง sim
-SIM_STEP_INTERVAL = 150.0   # วินาทีจริงต่อ 1 ชั่วโมง sim (3600/24 = 150)
+# ─# ── Time Scale ────────────────────────────────────────────────────────
+# 1 วันจริง = 2 วัน sim (เร็วกว่าเวลาโลกจริงครึ่งหนึ่ง)
+# 1 วัน sim = 24 ชั่วโมง sim → step ทุก 75 วินาที = 1 ชั่วโมง sim
+# ดังนั้น 1 วัน sim ใช้เวลาจริง 1,800 วินาที (30 นาที)
+SIM_STEP_INTERVAL = 75.0   # วินาทีจริงต่อ 1 ชั่วโมง sim (3600/48 = 75))
 
 # ── สรุป scale ──────────────────────────────────────────────────────────────
-# 150 วิ = 1 ชม sim
-# 3600 วิ (1 ชม real) = 24 ชม sim = 1 วัน sim ✅
-# นั่งดู 1 ชม เห็น Adam/Eve ใช้ชีวิต 1 วันเต็ม
+# 75 วิ = 1 ชม sim
+# 1,800 วิ (30 นาที real) = 24 ชม sim = 1 วัน sim ✅
+# นั่งดู 30 นาที เห็น Adam/Eve ใช้ชีวิต 1 วันเต็ม
 
 class SpatialGrid:
     """
@@ -227,6 +228,19 @@ class SimState:
 
             rel_s = self.rel.summary
 
+            # Collect recent dialogue/speech events
+            dialogue_events = []
+            for h in self.humans:
+                if h.last_utterance:
+                    dialogue_events.append({
+                        "speaker": h.name,
+                        "words": " ".join(h.last_utterance.words),
+                        "meaning": h.last_utterance.meaning,
+                        "day": self.day,
+                        "hour": self.hour,
+                        "timestamp": now_thai.isoformat(),
+                    })
+
             result = {
                 "day":     self.day,
                 "time":    now_thai.strftime("%H:%M:%S"),
@@ -254,6 +268,7 @@ class SimState:
                     "conflict": rel_s["conflict"],
                 },
                 "history":  self.history[-30:],
+                "dialogue": dialogue_events,  # Recent speech events from Adam/Eve
                 "pop_history": self.pop_history[-100:],
                 "biomass":  round(self.plants.global_biomass, 1),
                 "game_over":self.game_over,

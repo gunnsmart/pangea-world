@@ -57,12 +57,32 @@ async function fetchState() {
   }
 }
 
+// Update dialogue panel
+function updateDialoguePanel(dialogueEvents) {
+  const dialoguePanel = document.getElementById('dialogue-panel');
+  if (!dialoguePanel) return;
+  
+  for (const event of dialogueEvents) {
+    const entry = document.createElement('div');
+    entry.className = 'dialogue-entry';
+    entry.innerHTML = '<strong>' + event.speaker + ':</strong> ' + event.words;
+    dialoguePanel.appendChild(entry);
+  }
+  
+  while (dialoguePanel.children.length > 20) {
+    dialoguePanel.removeChild(dialoguePanel.firstChild);
+  }
+  
+  dialoguePanel.scrollTop = dialoguePanel.scrollHeight;
+}
+
 // Partial render — ไม่ redraw map (เร็วมาก)
 function renderPartial(data) {
   updateHeader(data);
   if (data.humans)  updateHumans(data.humans, lastState.relationship);
   if (data.fauna)   updateStats(lastState);
   if (data.history) updateLog(data.history);
+  if (data.dialogue) updateDialoguePanel(data.dialogue);
   if (lastState && lastState.map) {
     drawEntitiesOnly(data.humans, data.animals || []);
   }

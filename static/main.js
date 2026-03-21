@@ -9,6 +9,13 @@ let lastState = null;
 let lastDay = -1;
 let mapImageData = null;
 
+// ── Real-time Interpolation ──────────────────────────────────────────────────
+let lastUpdateTime = Date.now();
+let entityInterpolationData = {}; // Store previous positions for interpolation
+
+// ── Speech Bubbles ───────────────────────────────────────────────────────────
+let activeSpeechBubbles = []; // Array of {speaker, text, startTime, duration}
+
 // ── Detect screen size and adjust CELL size ──────────────────────────────────
 function updateCanvasSize() {
   const container = document.getElementById('map-container');
