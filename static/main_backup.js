@@ -1,49 +1,33 @@
-// main_responsive.js — Responsive UI with Canvas Scaling & Touch Support
+// main.js — REST polling only (no WebSocket)
 
 const canvas = document.getElementById('map-canvas');
 const ctx    = canvas.getContext('2d');
+const CELL   = 6;    // 6px per cell → 100×6 = 600px
 const SIZE   = 100;
 
-let CELL = 6;    // Default cell size (will be adjusted based on screen size)
 let lastState = null;
-let lastDay = -1;
-let mapImageData = null;
-
-// ── Detect screen size and adjust CELL size ──────────────────────────────────
-function updateCanvasSize() {
-  const container = document.getElementById('map-container');
-  if (!container) return;
-
-  const containerWidth = container.offsetWidth;
-  const containerHeight = container.offsetHeight;
-  const maxSize = Math.min(containerWidth, containerHeight) - 16;
-
-  // Calculate cell size to fit the container
-  CELL = Math.floor(maxSize / SIZE);
-  CELL = Math.max(2, Math.min(CELL, 12)); // Clamp between 2 and 12
-
-  const newWidth = SIZE * CELL;
-  const newHeight = SIZE * CELL;
-
-  canvas.width = newWidth;
-  canvas.height = newHeight;
-}
 
 // ── Fetch state ทุก 3 วิ ──────────────────────────────────────────────────
+let lastDay = -1;
+
 async function fetchState() {
   try {
+    // ใช้ delta endpoint — ส่งแค่สิ่งที่เปลี่ยน
     const res  = await fetch(`/api/state/delta?last_day=${lastDay}`);
     const resp = await res.json();
 
     if (resp.type === 'full') {
+      // Full update — map เปลี่ยน
       lastState = resp.data;
       lastDay   = resp.data.day;
       render(lastState);
     } else {
+      // Partial update — อัปเดตแค่บางส่วน ไม่ redraw map
       if (lastState) {
         Object.assign(lastState, resp.data);
         renderPartial(resp.data);
       } else {
+        // ยังไม่มี state เลย — fetch full
         const full = await fetch('/api/state');
         lastState  = await full.json();
         lastDay    = lastState.day;
@@ -63,21 +47,28 @@ function renderPartial(data) {
   if (data.humans)  updateHumans(data.humans, lastState.relationship);
   if (data.fauna)   updateStats(lastState);
   if (data.history) updateLog(data.history);
+  // วาดแค่ entities บน canvas (ไม่ rebuild map ทั้งหมด)
   if (lastState && lastState.map) {
     drawEntitiesOnly(data.humans, data.animals || []);
   }
 }
 
 // วาดเฉพาะ humans+animals บน canvas ที่มี map อยู่แล้ว
+let mapImageData = null;
+
 function drawEntitiesOnly(humans, animals) {
   if (!mapImageData) return;
+  // restore map base ก่อน
   ctx.putImageData(mapImageData, 0, 0);
+  // วาด entities ทับ
   drawEntities(humans, animals);
 }
 
 function drawEntities(humans, animals) {
   if (!humans || !animals) return;
   for (const a of animals) {
+    const x = a.pos[1] * CELL + CELL/2;
+    const y = a.pos[0] * CELL + CELL/2;
     ctx.fillStyle = a.sleeping ? '#646478' :
                    (a.type==='Carnivore' ? '#ff3232' : '#ffdc32');
     ctx.fillRect(a.pos[1]*CELL, a.pos[0]*CELL, CELL, CELL);
@@ -96,10 +87,8 @@ function sendCmd(cmd) {
 // ── Canvas Map ───────────────────────────────────────────────────────────
 function drawMap(mapData) {
   if (!mapData || mapData.length === 0) return;
-
   const imgData = ctx.createImageData(SIZE * CELL, SIZE * CELL);
   const d = imgData.data;
-
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       const [R, G, B] = mapData[r][c];
@@ -112,6 +101,7 @@ function drawMap(mapData) {
     }
   }
   ctx.putImageData(imgData, 0, 0);
+  // เก็บ map base ไว้สำหรับ partial render
   mapImageData = ctx.getImageData(0, 0, SIZE*CELL, SIZE*CELL);
 }
 
@@ -203,7 +193,7 @@ function humanCard(h) {
     ${(h.language.top_words||[]).map(w =>
       `<span class="badge" style="font-size:9px" title="${w.meaning}">${w.form}(${w.uses})</span>`
     ).join(' ')}` : ''}
-  </div>`;
+  </div>\`;
 }
 
 function driveRow(label, val, color) {
@@ -279,26 +269,6 @@ function setBar(barId, valId, val, max, color) {
   if (txt) txt.textContent = val;
 }
 
-// ── Responsive Handler ────────────────────────────────────────────────────
-window.addEventListener('resize', () => {
-  updateCanvasSize();
-  if (lastState && lastState.map) {
-    drawMap(lastState.map);
-    drawEntities(lastState.humans, lastState.animals || []);
-  }
-});
-
-// ── Prevent default touch behaviors ───────────────────────────────────────
-document.addEventListener('touchmove', (e) => {
-  if (e.target === canvas) {
-    e.preventDefault();
-  }
-}, { passive: false });
-
-// ── Initialize ────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
-  updateCanvasSize();
-  fetchState();
-});
-
+// ── Start ─────────────────────────────────────────────────────────────────
+fetchState();
 setInterval(fetchState, 3000);
