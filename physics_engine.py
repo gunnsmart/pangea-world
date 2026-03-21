@@ -509,7 +509,7 @@ class WorldPhysics:
         bmr = self.metab.bmr_allometric(mass_kg, temp_c)
 
         # Work done (เดิน/ปีนเขา)
-        elev_m   = elevation * 10  # biome ID → เมตร (rough)
+        elev_m   = elevation  # elevation is already in meters
         work_kj  = self.thermo.work_against_gravity(mass_kg, elev_m * 0.1)
 
         # Heat loss (radiation)

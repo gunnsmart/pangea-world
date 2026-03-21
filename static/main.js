@@ -80,11 +80,21 @@ function drawEntities(humans, animals) {
   for (const a of animals) {
     ctx.fillStyle = a.sleeping ? '#646478' :
                    (a.type==='Carnivore' ? '#ff3232' : '#ffdc32');
-    ctx.fillRect(a.pos[1]*CELL, a.pos[0]*CELL, CELL, CELL);
+    // Support both integer and float positions
+    const posX = Array.isArray(a.pos) && a.pos.length >= 2 ? a.pos[1] : a.pos[1];
+    const posY = Array.isArray(a.pos) && a.pos.length >= 2 ? a.pos[0] : a.pos[0];
+    ctx.fillRect(posX*CELL, posY*CELL, CELL, CELL);
   }
   for (const h of humans) {
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(h.pos[1]*CELL, h.pos[0]*CELL, CELL, CELL);
+    // Support both integer and float positions for sub-grid movement
+    const posX = Array.isArray(h.pos) && h.pos.length >= 3 ? h.pos[1] : h.pos[1];
+    const posY = Array.isArray(h.pos) && h.pos.length >= 3 ? h.pos[0] : h.pos[0];
+    const posZ = Array.isArray(h.pos) && h.pos.length >= 3 ? h.pos[2] : 0;
+    
+    // Draw character with slight offset based on z-height (for jumping/falling effect)
+    const heightOffset = posZ * 2; // Scale z-height for visual effect
+    ctx.fillRect(posX*CELL, posY*CELL - heightOffset, CELL, CELL);
   }
 }
 

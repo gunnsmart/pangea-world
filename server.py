@@ -35,6 +35,19 @@ from fire_system import FireSystem
 import random
 import numpy as np
 
+# Simple mapping from biome ID to a rough elevation in meters
+# This is a placeholder and can be refined with actual heightmap data from terrain.py
+BIOME_ELEVATION_M = {
+    0: 0.0,   # DEEP_WATER
+    1: 0.1,   # SHALLOW
+    2: 0.5,   # BEACH
+    3: 1.0,   # GRASSLAND
+    4: 2.0,   # FOREST
+    5: 3.0,   # TROPICAL
+    6: 5.0,   # MOUNTAIN
+    7: 10.0,  # PEAK
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIMULATION STATE — shared between sim thread and WebSocket handlers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -129,8 +142,10 @@ class SimState:
 
         adam = HumanAI("Adam", 170, 70, "Eve")
         eve  = HumanAI("Eve",  160, 55, "Adam")
-        adam.pos = [50, 50]
-        eve.pos  = [50, 52]
+        # Initialize human positions using body.position
+        adam.body.position = np.array([50.0, 50.0, 0.0])
+        eve.body.position  = np.array([50.0, 52.0, 0.0])
+        # The h.pos property in HumanAI will now derive from body.position
         base = ["หินเหล็กไฟ", "กิ่งไม้แห้ง", "ใบไม้ใหญ่", "เถาวัลย์"]
         adam.inventory = random.sample(base, 3)
         eve.inventory  = random.sample(base, 3)
@@ -180,7 +195,7 @@ class SimState:
                 humans_data.append({
                     "name":    h.name,
                     "sex":     h.sex,
-                    "pos":     h.pos,
+                    "pos":     h.body.position.tolist(), # Send float position for sub-grid movement
                     "alive":   bd.alive,
                     "health":  round(bd.health, 1),
                     "age":     round(bd.age_years, 1),
@@ -245,7 +260,7 @@ class SimState:
                 "running":  self.running,
                 "animals": [
                     {"species": a.species, "type": a.a_type,
-                     "pos": a.pos, "icon": a.icon,
+                     "pos": a.pos, # Animals still use integer positions for now "icon": a.icon,
                      "sleeping": a.sleeping, "status": a.status}
                     for a in self.animals
                 ],
@@ -524,12 +539,23 @@ def _step_world():
         _execute_action(h, partner, action, perc, info_now, near_fire,
                         has_cooked, hour, dis_fx, SIZE)
 
-        # Physics
+        # Get terrain elevation at human's current (integer) grid position
+        current_grid_r, current_grid_c = h.pos[0], h.pos[1]
+        biome_id = sim.terrain.template[current_grid_r][current_grid_c]
+        terrain_elevation_m = BIOME_ELEVATION_M.get(biome_id, 0.0)
+
+        # Update human physics (position, velocity, acceleration)
+        h.body.physics_step(terrain_elevation_m)
+
+        # Update h.pos (integer grid) from body.position (float) for compatibility with other parts of the sim
+        h.pos = [int(h.body.position[0]), int(h.body.position[1])]
+
+        # Physics calculations for energy, warmth, etc.
         h_px = sim.wp.human_daily_physics(
             h.mass, h.height, h.sex,
-            1.0 if h.sleeping else 1.4,
+            1.0 if h.sleeping else 1.4, # activity level
             sim.weather.global_temperature,
-            info_now["elevation"],
+            terrain_elevation_m, # Pass actual elevation in meters
         )
         warmth = sim.fs.human_warmth_effect(h.pos, h.mass, sim.weather.global_temperature)
         h.u_energy = max(0, h.u_energy + h_px["du_kj"]
@@ -799,8 +825,11 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                     r2=max(0,min(SIZE-1,h.pos[0]+dr)); c2=max(0,min(SIZE-1,h.pos[1]+dc))
                     fl=sim.terrain.vegetation[r2][c2]
                     if fl>best_food: best_food,best=fl,[r2,c2]
-            h.pos[0]=max(0,min(SIZE-1,h.pos[0]+max(-2,min(2,best[0]-h.pos[0]))))
-            h.pos[1]=max(0,min(SIZE-1,h.pos[1]+max(-2,min(2,best[1]-h.pos[1]))))
+            # Calculate direction vector towards best food
+            direction = np.array([float(best[0]) - h.body.position[0], float(best[1]) - h.body.position[1], 0.0])
+            if np.linalg.norm(direction) > 0.1: # Avoid division by zero
+                direction = direction / np.linalg.norm(direction)
+            h.apply_movement_impulse(direction, speed=1.0) # Apply impulse towards food
 
     elif action=="eat_cooked" and has_cooked and not h.sleeping:
         food = sim.cooked_foods.pop(0)
@@ -818,8 +847,11 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                 for dc in range(-8,9):
                     r2=max(0,min(SIZE-1,h.pos[0]+dr)); c2=max(0,min(SIZE-1,h.pos[1]+dc))
                     if sim.terrain.template[r2][c2] in [0,1]:
-                        h.pos[0]=max(0,min(SIZE-1,h.pos[0]+max(-2,min(2,r2-h.pos[0]))))
-                        h.pos[1]=max(0,min(SIZE-1,h.pos[1]+max(-2,min(2,c2-h.pos[1]))))
+                        # Calculate direction vector towards water
+                        direction = np.array([float(r2) - h.body.position[0], float(c2) - h.body.position[1], 0.0])
+                        if np.linalg.norm(direction) > 0.1:
+                            direction = direction / np.linalg.norm(direction)
+                        h.apply_movement_impulse(direction, speed=1.0)
                         break
                 else: continue; break
 
@@ -905,22 +937,25 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                 target = mem.pos if mem else h.pos
         else:
             target = h.pos
-        dr = max(-2, min(2, target[0]-h.pos[0]))
-        dc = max(-2, min(2, target[1]-h.pos[1]))
-        h.pos[0] = max(0, min(self.SIZE-1, h.pos[0]+dr))
-        h.pos[1] = max(0, min(self.SIZE-1, h.pos[1]+dc))
+        # Calculate direction vector towards target
+        direction = np.array([float(target[0]) - h.body.position[0], float(target[1]) - h.body.position[1], 0.0])
+        if np.linalg.norm(direction) > 0.1:
+            direction = direction / np.linalg.norm(direction)
+        h.apply_movement_impulse(direction, speed=1.0)
 
     elif action=="flee" and not h.sleeping:
-        h.pos[0]=max(0,min(SIZE-1,h.pos[0]+random.choice([-3,-2,2,3])))
-        h.pos[1]=max(0,min(SIZE-1,h.pos[1]+random.choice([-3,-2,2,3])))
+        # Flee by applying a random impulse
+        flee_direction = np.array([random.choice([-1.0, 1.0]), random.choice([-1.0, 1.0]), 0.0])
+        h.apply_movement_impulse(flee_direction, speed=2.0)
         h.brain.drives.relieve("fear",10)
 
     elif action in ("explore","rest") and not h.sleeping:
         if action=="explore":
-            dr,dc=random.randint(-3,3),random.randint(-3,3)
-            nr,nc=max(0,min(SIZE-1,h.pos[0]+dr)),max(0,min(SIZE-1,h.pos[1]+dc))
-            if not sim.terrain.get_info(nr,nc).get("is_water"):
-                h.pos[0],h.pos[1]=nr,nc
+            # Explore by applying a random impulse
+            explore_direction = np.array([random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0), 0.0])
+            if np.linalg.norm(explore_direction) > 0.1:
+                explore_direction = explore_direction / np.linalg.norm(explore_direction)
+            h.apply_movement_impulse(explore_direction, speed=0.5)
             h.brain.drives.relieve("bored",5)
         else:
             h.brain.drives.relieve("tired",5)

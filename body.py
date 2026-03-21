@@ -8,6 +8,13 @@ body.py — ระบบร่างกายแยกตามเพศ (Adam =
 """
 
 import random
+import numpy as np
+
+# ── ค่าคงที่ฟิสิกส์ ─────────────────────────────────────────────────────────
+GRAVITY_ACCEL = np.array([0.0, 0.0, -9.81]) # m/s^2 (z-axis up, so gravity is negative)
+FRICTION_COEFF = 0.8 # ค่าสัมประสิทธิ์แรงเสียดทาน (0-1, 1=ไม่มีแรงเสียดทาน)
+TIME_STEP = 1.0 # วินาทีต่อ 1 step (สมมติว่า 1 step ของ sim คือ 1 วินาทีจริง)
+
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -56,6 +63,14 @@ class Body:
         self.mass   = mass     # kg
         self.height = height   # cm
         self.age    = 25 * 365 # วัน (เริ่ม 25 ปี)
+
+        # ── Physics State ──────────────────────────────────────────
+        self.position     = np.array([0.0, 0.0, 0.0])  # (x, y, z) float coordinates
+        self.velocity     = np.array([0.0, 0.0, 0.0])  # (vx, vy, vz) float
+        self.acceleration = np.array([0.0, 0.0, 0.0])  # (ax, ay, az) float
+        self.on_ground    = True                 # สำหรับแรงโน้มถ่วง
+        self.height_m     = height / 100.0       # ความสูงของตัวละครเป็นเมตร
+
 
         # ── องค์ประกอบร่างกาย ─────────────────────────────────────
         if sex == "M":
@@ -169,6 +184,36 @@ class Body:
         self._check_death(events)
 
         return events
+
+    def physics_step(self, terrain_height_at_pos: float):
+        # Apply gravity if not on ground
+        if not self.on_ground:
+            self.acceleration += GRAVITY_ACCEL
+
+        # Apply friction (only horizontal components)
+        if self.on_ground:
+            self.velocity[0:2] *= FRICTION_COEFF
+
+        # Update velocity based on acceleration
+        self.velocity += self.acceleration * TIME_STEP
+
+        # Update position based on velocity
+        self.position += self.velocity * TIME_STEP
+
+        # Reset acceleration for next step
+        self.acceleration = np.array([0.0, 0.0, 0.0])
+
+        # Simple collision with ground (z-axis)
+        if self.position[2] < terrain_height_at_pos:
+            self.position[2] = terrain_height_at_pos
+            self.velocity[2] = 0.0
+            self.on_ground = True
+        else:
+            self.on_ground = False
+
+        # Ensure horizontal position stays within map bounds (assuming 0-99)
+        self.position[0] = np.clip(self.position[0], 0, 99)
+        self.position[1] = np.clip(self.position[1], 0, 99)
 
     # ── BMR (Mifflin-St Jeor) ────────────────────────────────────
     def _calc_bmr(self) -> float:

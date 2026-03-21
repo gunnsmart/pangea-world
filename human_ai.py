@@ -2,6 +2,7 @@ import random
 import os
 import json
 import requests
+import numpy as np
 from datetime import datetime
 from body import Body
 from brain import Brain
@@ -82,7 +83,8 @@ class HumanAI:
         self.age      = 25.0
         self.health   = 100.0
         self.u_energy = 850.0
-        self.pos      = [25, 25]   # กลางแผนที่ 50×50
+        # self.pos      = [25, 25]   # กลางแผนที่ 50×50 (legacy, will be derived from body.position)
+        self.body.position = np.array([25.0, 25.0, 0.0]) # Initialize body's float position (x, y, z)
         self.bond     = 10.0
         self.sleeping = False
 
@@ -186,6 +188,10 @@ class HumanAI:
         events.append(f"🌅 {self.name} ตื่นนอน")
 
     # ── สืบพันธุ์ ────────────────────────────────────────────────────
+    def apply_movement_impulse(self, direction: np.ndarray, speed: float):
+        # Apply an impulse to the body's velocity
+        self.body.velocity += direction * speed
+
     def _do_mate(self, partner: "HumanAI", events: list):
         dist = abs(self.pos[0] - partner.pos[0]) + abs(self.pos[1] - partner.pos[1])
         if dist > 3:
@@ -263,19 +269,46 @@ class HumanAI:
     # ────────────────────────────────────────────────────────────────
     # ⚙️ Physics update
     # ────────────────────────────────────────────────────────────────
-    def update_physics(self, elevation: int, partner_pos: list):
+    def update_physics(self, terrain_info: dict, partner_pos: list):
         days = (datetime.now() - self.birth_time).total_seconds() / 86400
         self.age = 25.0 + (days / 365.25)
+
+        # Get terrain height at current (x,y) position
+        # For now, use a simple mapping from biome ID to a rough height in meters
+        # This needs to be improved with actual heightmap data from terrain.py
+        terrain_elevation_m = terrain_info.get("elevation_m", 0.0)
+
+        # Apply physics step to the body
+        self.body.physics_step(terrain_elevation_m)
+
+        # Update HumanAI's pos (integer grid) from body's float position for compatibility
+        self.pos = [int(self.body.position[0]), int(self.body.position[1])]
+
         if not self.sleeping:
-            work = 0.005 * (self.mass / 70.0) * (elevation + 1.2)
+            # Recalculate work based on new physics (e.g., vertical movement, speed)
+            # For now, a simplified version based on movement magnitude
+            movement_magnitude = np.linalg.norm(self.body.velocity)
+            work = 0.005 * (self.mass / 70.0) * (movement_magnitude * 0.5 + 1.0) # Simplified work calculation
             self.u_energy -= work
-        dist = abs(self.pos[0] - partner_pos[0]) + abs(self.pos[1] - partner_pos[1])
-        if dist == 0:
+
+        # Distance to partner now uses body.position
+        partner_pos_np = np.array([float(partner_pos[0]), float(partner_pos[1]), 0.0]) # Assuming partner_pos is [x,y]
+        dist = np.linalg.norm(self.body.position[0:2] - partner_pos_np[0:2]) # Only horizontal distance for bond
+        if dist < 1.0: # If very close
             self.bond = min(100, self.bond + 0.03)
 
     # ────────────────────────────────────────────────────────────────
     # 📊 สรุปสถานะ
     # ────────────────────────────────────────────────────────────────
+    @property
+    def pos(self) -> list:
+        return [int(self.body.position[0]), int(self.body.position[1])]
+
+    @pos.setter
+    def pos(self, value: list):
+        self.body.position[0] = float(value[0])
+        self.body.position[1] = float(value[1])
+
     @property
     def status_bar(self) -> str:
         n = self.needs
