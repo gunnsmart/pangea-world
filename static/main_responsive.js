@@ -272,13 +272,14 @@ function render(s) {
   if (s.humans) updateHumans(s.humans, s.relationship);
   updateEco(s);
   updateLog(s.history || []);
+  if (s.dialogue) updateDialoguePanel(s.dialogue);
   drawChart(s.pop_history || []);
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
+  const names = ['stats','humans','eco','dialogue','log'];
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const names = ['stats','humans','eco','log'];
     t.classList.toggle('active', names[i]===name);
   });
   document.querySelectorAll('.tab-content').forEach(c => {
