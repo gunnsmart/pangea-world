@@ -1,4 +1,3 @@
-# server.py
 import asyncio
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
@@ -8,21 +7,23 @@ from ui.websocket_manager import WebSocketManager
 
 app = FastAPI()
 world = World()
-ws_manager = WebSocketManager()   # will get loop later
+ws_manager = WebSocketManager()
 
-# Register world listener
+# Subscribe to event bus for logs and dialogues
+def on_log(msg: str):
+    ws_manager.broadcast({"type": "log", "data": msg})
+world.event_bus.on("log", on_log)
+
+def on_dialogue(utterance):
+    ws_manager.broadcast({"type": "dialogue", "data": utterance})
+world.event_bus.on("dialogue", on_dialogue)
+
+# Register world snapshot listener
 def on_world_update(snapshot):
     ws_manager.broadcast(snapshot)
-
 world.listeners.append(on_world_update)
 
-# Start simulation thread
 world.start()
-
-@app.on_event("startup")
-async def startup():
-    # Ensure ws_manager has the correct loop (already has from __init__)
-    pass
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -48,7 +49,6 @@ def command(cmd: str):
         pass
     return {"ok": True}
 
-# Serve static files
 app.mount("/static", StaticFiles(directory="ui/static"), name="static")
 @app.get("/")
 async def index():
