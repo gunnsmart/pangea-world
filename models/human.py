@@ -1,4 +1,3 @@
-# models/human.py
 import random
 import numpy as np
 from typing import Dict, Any, List
@@ -23,7 +22,7 @@ class HumanAI:
         self.current_action = "idle"
         self.sleeping = False
         self.pos = np.array([50.0, 50.0, 0.0])
-        self.visible = []   # will be filled by perceive
+        self.visible = []
         self.sounds = []
 
     def perceive(self, world, partner) -> Dict[str, Any]:
@@ -264,7 +263,6 @@ class HumanAI:
                 self.brain.drives.relieve("tired", 5)
 
     def apply_movement_impulse(self, direction: np.ndarray, speed: float = 1.0):
-        """Apply force to change velocity (simulate movement)"""
         force = direction * speed * 5.0
         self.body.acceleration += force
 
@@ -272,13 +270,10 @@ class HumanAI:
         self.body.physics_step(terrain_elevation)
 
     def experiment(self):
-        """Simplified crafting"""
         if self.sleeping or len(self.inventory) < 2:
             return None, None, None
         items = random.sample(self.inventory, 2)
-        # dummy stats
         stats = {"hardness": 1}
-        # dummy invention name
         if "หิน" in items[0] and "ไม้" in items[1]:
             invention = {"name": "ขวานหิน", "use": "ตัดไม้ ล่าสัตว์"}
         elif "เถาวัลย์" in items[0] or "เถาวัลย์" in items[1]:
