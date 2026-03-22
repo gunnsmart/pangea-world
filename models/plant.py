@@ -1,5 +1,4 @@
 # models/plant.py
-from utils.config import MAP_SIZE
 from models.terrain import TROPICAL, FOREST, GRASSLAND, SHALLOW, BEACH, MOUNTAIN, PEAK, DEEP_WATER
 
 class PlantEcosystem:
