@@ -1170,6 +1170,3 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def index():
     return FileResponse("static/index.html")
-```
-
----
