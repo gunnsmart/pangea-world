@@ -116,6 +116,8 @@ class SimState:
         self.day = 0
         self.hour = 12   # เริ่มต้นเวลา 12:00 น. (ใช้ภายใน sim)
         self.history: list[str] = []
+        self.lock = threading.Lock()
+        self.cooked_foods = []
         self.cooked_foods: list[dict] = []
         self.dead: set = set()
         self.game_over = False
