@@ -4,14 +4,12 @@
 # Simulation timing
 SIM_STEP_INTERVAL = 1.0       # วินาทีจริงต่อ 1 ชั่วโมง sim
 MAX_CATCHUP = 24              # step ต่อเฟรมสูงสุด (ป้องกัน lag)
-GAME_TICK = 2.5               # วินาทีระหว่างการส่ง snapshot
 
 # World
 MAP_SIZE = 100                # ขนาดแผนที่ 100x100
-CELL_SIZE = 6                 # พิกเซลต่อเซลล์ (สำหรับ UI)
 
 # Biology constants
-LIFESPAN_M = 35 * 365         # วัน
+LIFESPAN_M = 35 * 365
 LIFESPAN_F = 38 * 365
 GESTATION_DAYS = 280
 RECOVERY_DAYS = 365
