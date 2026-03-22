@@ -199,6 +199,50 @@ class Animal:
         self.pos[0] = max(0, min(size-1, self.pos[0]+dr))
         self.pos[1] = max(0, min(size-1, self.pos[1]+dc))
 
+    def eat_vegetation(self, terrain) -> float:
+        if self.sleeping or self.a_type != "Herbivore":
+            return 0
+        r, c = self.pos
+        available = terrain.vegetation[r][c]
+        if available < 5:
+            return 0
+        eaten = min(available, self.mass * 0.05)
+        terrain.vegetation[r][c] = max(0, available - eaten)
+        self.energy = min(1000, self.energy + eaten * self.energy_gain * 0.01)
+        self.drives.hunger = max(0, self.drives.hunger - eaten * 2)
+        self.known_food_pos.append([r, c])
+        if len(self.known_food_pos) > 10:
+            self.known_food_pos.pop(0)
+        return eaten
+
+    def drink_water(self, terrain) -> bool:
+        r, c = self.pos
+        info = terrain.get_info(r, c)
+        if info.get("is_water"):
+            self.drives.thirst = max(0, self.drives.thirst - 60)
+            self.known_water_pos.append([r, c])
+            if len(self.known_water_pos) > 5:
+                self.known_water_pos.pop(0)
+            return True
+        return False
+
+    def try_mate(self, other: "Animal") -> bool:
+        if (self.species != other.species or self.sex == other.sex
+                or self.sleeping or other.sleeping
+                or self.pregnant or other.pregnant
+                or self.recovery_days > 0 or other.recovery_days > 0
+                or self.drives.libido < 70 or other.drives.libido < 70):
+            return False
+        female = self if self.sex == "F" else other
+        chance = 0.3 - (female.age_years / female.max_age * 0.2)
+        if random.random() < max(0.05, chance):
+            female.pregnant = True
+            female.days_pregnant = 0
+            self.drives.libido = max(0, self.drives.libido - 60)
+            other.drives.libido = max(0, other.drives.libido - 60)
+            return True
+        return False
+
     def to_dict(self) -> Dict:
         return {
             "species": self.species,
