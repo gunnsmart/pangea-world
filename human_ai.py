@@ -1,7 +1,9 @@
+"""
+human_ai.py — Human Agent ที่รวม Body + Brain + Senses
+ใช้ Brain ในการตัดสินใจ (pure autonomous)
+"""
+
 import random
-import os
-import json
-import requests
 import numpy as np
 from datetime import datetime
 from body import Body
@@ -9,96 +11,35 @@ from brain import Brain
 from senses import VisionSystem, SoundSystem, LongTermMemory
 from language import ProtoLanguage
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-
-# ── ค่าคงที่สัญชาติญาณ ──────────────────────────────────────────────────────
-HUNGER_MAX      = 100.0   # หิวเต็มที่ → ต้องกิน
-BLADDER_MAX     = 100.0   # ปัสสาวะเต็ม → ต้องขับ
-SLEEP_MAX       = 100.0   # ง่วงเต็ม → ต้องนอน
-LIBIDO_MAX      = 100.0   # ความต้องการทางเพศ
-
-HUNGER_RATE     = 4.0     # หิวเพิ่ม/วัน
-BLADDER_RATE    = 6.0     # ปัสสาวะสะสม/วัน (กินน้ำ/กินอาหาร)
-SLEEP_RATE      = 5.0     # ง่วงสะสม/วัน
-LIBIDO_RATE     = 2.0     # ความต้องการสะสม/วัน
-
-SLEEP_HOURS     = (21, 6) # นอน 21:00–06:00 ตามธรรมชาติ
-
-
-class Needs:
-    """ความต้องการพื้นฐาน 4 อย่างของมนุษย์"""
-    def __init__(self):
-        self.hunger  = 20.0   # 0=อิ่ม, 100=หิวมาก
-        self.bladder = 10.0   # 0=ว่าง, 100=อั้นไม่ไหว
-        self.sleepy  = 10.0   # 0=สดชื่น, 100=ง่วงมาก
-        self.libido  = 5.0    # 0=ไม่สนใจ, 100=ต้องการ
-
-    @property
-    def urgent(self) -> str | None:
-        """คืนความต้องการเร่งด่วนที่สุด"""
-        if self.sleepy  >= 90: return "sleep"
-        if self.hunger  >= 85: return "eat"
-        if self.bladder >= 90: return "toilet"
-        if self.libido  >= 80: return "mate"
-        return None
-
-    @property
-    def status_emoji(self) -> str:
-        u = self.urgent
-        if u == "sleep":  return "😴 ง่วง"
-        if u == "eat":    return "🍖 หิว"
-        if u == "toilet": return "🚽 ปวด"
-        if u == "mate":   return "💕 ต้องการ"
-        return "😊 ปกติ"
-
-
 class HumanAI:
-    def __init__(self, name, height, mass, partner_name):
-        self.name         = name
+    def __init__(self, name: str, height: float, mass: float, partner_name: str, time_scale: float = 1.0):
+        self.name = name
         self.partner_name = partner_name
-        self.height       = height
-        self.mass         = mass
-        self.birth_time   = datetime.now()
-        self.sex          = "M" if name == "Adam" else "F"
+        self.sex = "M" if name == "Adam" else "F"
+        self.time_scale = time_scale
 
         # 🧬 ร่างกาย
-        self.body = Body(name, self.sex, mass, height)
+        self.body = Body(name, self.sex, mass, height, time_scale=time_scale)
 
         # 🧠 สมอง
-        self.brain = Brain(name)
+        self.brain = Brain(name, time_scale=time_scale)
 
         # 👁 ประสาทสัมผัส
-        self.vision  = VisionSystem()
+        self.vision = VisionSystem()
         self.hearing = SoundSystem()
-        self.ltm     = LongTermMemory(capacity=500)   # long-term memory
-        self.visible : list = []   # สิ่งที่เห็นตอนนี้
-        self.sounds  : list = []   # เสียงที่ได้ยินตอนนี้
+        self.ltm = LongTermMemory(capacity=500)
 
         # 💬 ภาษา
-        self.lang    = ProtoLanguage(name)
-        self.last_utterance = None   # การพูดล่าสุด
+        self.lang = ProtoLanguage(name)
+        self.last_utterance = None
 
-        # Stats
-        self.age      = 25.0
-        self.health   = 100.0
-        self.u_energy = 850.0
-        # self.pos      = [25, 25]   # กลางแผนที่ 50×50 (legacy, will be derived from body.position)
-        self.body.position = np.array([25.0, 25.0, 0.0]) # Initialize body's float position (x, y, z)
-        self.bond     = 10.0
+        # สถานะปัจจุบัน
         self.sleeping = False
-
-        # 🧠 สัญชาติญาณพื้นฐาน
-        self.needs = Needs()
-
-        # ประวัติการกระทำ (ใช้แสดงใน UI)
-        self.current_action = "🚶 เดินสำรวจ"
-
-        # inventory & knowledge
+        self.current_action = "idle"
         self.inventory = []
         self.knowledge = {}
 
-        # วัตถุดิบ
+        # วัตถุดิบสำหรับ crafting
         self.materials_attr = {
             "หินเหล็กไฟ": {"sharp": 15, "hard": 60, "heat": 40, "weight": 20},
             "กิ่งไม้แห้ง": {"sharp": 5,  "hard": 15, "heat": 20, "length": 50},
@@ -107,212 +48,210 @@ class HumanAI:
             "หินคม":      {"sharp": 40, "hard": 50, "heat": 10, "weight": 15},
         }
 
+        # กำหนดตำแหน่งเริ่มต้น (ใช้ body.position)
+        self.body.position = np.array([50.0, 50.0, 0.0])  # x, y, z
+
     # ────────────────────────────────────────────────────────────────
-    # 🧬 สัญชาติญาณ — อัปเดตทุกวัน
+    # 🧠 Perception Gathering (เรียกก่อน brain.step)
     # ────────────────────────────────────────────────────────────────
-    def update_needs(self, hour: int, partner: "HumanAI | None" = None,
-                     has_food: bool = True) -> list[str]:
+    def gather_perception(self, hour: int, partner, terrain, weather, fire_system, animals, disasters, has_cooked_food):
         """
-        อัปเดตความต้องการตามเวลา คืน list ของ event strings
+        รวบรวมข้อมูลทั้งหมดที่ brain ต้องการ
         """
-        events = []
-        n = self.needs
-
-        # ── สะสมความต้องการตามธรรมชาติ ──
-        n.hunger  = min(HUNGER_MAX,  n.hunger  + HUNGER_RATE)
-        n.bladder = min(BLADDER_MAX, n.bladder + BLADDER_RATE)
-        n.sleepy  = min(SLEEP_MAX,   n.sleepy  + SLEEP_RATE)
-        n.libido  = min(LIBIDO_MAX,  n.libido  + LIBIDO_RATE)
-
-        # ── ตรวจเวลานอน (21:00–06:00) ──
-        is_sleep_time = hour >= 21 or hour < 6
-        if is_sleep_time and n.sleepy >= 60:
-            self._do_sleep(events)
-        elif not is_sleep_time and self.sleeping:
-            self._wake_up(events)
-
-        if self.sleeping:
-            return events   # หลับอยู่ → ไม่ทำอย่างอื่น
-
-        # ── ตัดสินใจตามสัญชาติญาณ (priority) ──
-        urgent = n.urgent
-        if urgent == "eat":
-            self._do_eat(has_food, events)
-        elif urgent == "toilet":
-            self._do_toilet(events)
-        elif urgent == "mate" and partner is not None:
-            self._do_mate(partner, events)
-        else:
-            self.current_action = "🚶 เดินสำรวจ"
-
-        # ── สุขภาพเสื่อมถ้าหิวนาน ──
-        if n.hunger >= HUNGER_MAX:
-            self.health = max(0, self.health - 5.0)
-            events.append(f"⚠️ {self.name} หิวโหยมาก สุขภาพลด!")
-
-        return events
-
-    # ── กิน ─────────────────────────────────────────────────────────
-    def _do_eat(self, has_food: bool, events: list):
-        if has_food:
-            self.needs.hunger  = max(0, self.needs.hunger  - 60)
-            self.needs.bladder = min(BLADDER_MAX, self.needs.bladder + 15)  # กินแล้วปวดปัสสาวะ
-            self.u_energy      = min(1000, self.u_energy + 120)
-            self.current_action = "🍖 กำลังกิน"
-            events.append(f"🍖 {self.name} กินอาหารแล้ว")
-        else:
-            self.current_action = "😰 หาอาหารไม่ได้"
-            events.append(f"😰 {self.name} หาอาหารไม่ได้!")
-
-    # ── ขับถ่าย ──────────────────────────────────────────────────────
-    def _do_toilet(self, events: list):
-        self.needs.bladder  = max(0, self.needs.bladder - 80)
-        self.current_action = "🚽 ขับถ่าย"
-        events.append(f"🚽 {self.name} ขับถ่าย")
-
-    # ── นอน ──────────────────────────────────────────────────────────
-    def _do_sleep(self, events: list):
-        if not self.sleeping:
-            self.sleeping       = True
-            self.current_action = "😴 กำลังนอนหลับ"
-            events.append(f"😴 {self.name} เข้านอน")
-        # ฟื้นฟูขณะหลับ
-        self.needs.sleepy  = max(0, self.needs.sleepy - 12)
-        self.needs.hunger  = min(HUNGER_MAX, self.needs.hunger + 1.5)   # หิวช้าขึ้นขณะหลับ
-        self.u_energy      = min(1000, self.u_energy + 30)
-
-    def _wake_up(self, events: list):
-        self.sleeping       = False
-        self.needs.sleepy   = max(0, self.needs.sleepy - 40)  # ตื่นมาสดชื่น
-        self.current_action = "🌅 ตื่นนอน"
-        events.append(f"🌅 {self.name} ตื่นนอน")
-
-    # ── สืบพันธุ์ ────────────────────────────────────────────────────
-    def apply_movement_impulse(self, direction: np.ndarray, speed: float):
-        # Apply an impulse to the body's velocity
-        self.body.velocity += direction * speed
-
-    def _do_mate(self, partner: "HumanAI", events: list):
-        dist = abs(self.pos[0] - partner.pos[0]) + abs(self.pos[1] - partner.pos[1])
-        if dist > 3:
-            # ต้องอยู่ใกล้กัน — เดินหาก่อน
-            self.current_action = f"💕 เดินหา {partner.name}"
-            return
-
-        if partner.needs.libido >= 50 and not partner.sleeping:
-            # ทั้งคู่พร้อม
-            self.needs.libido   = max(0, self.needs.libido   - 70)
-            partner.needs.libido = max(0, partner.needs.libido - 70)
-            self.bond           = min(100, self.bond + 5)
-            partner.bond        = min(100, partner.bond + 5)
-            self.current_action = f"💕 อยู่กับ {partner.name}"
-            events.append(f"💕 {self.name} และ {partner.name} อยู่ด้วยกัน (bond +5)")
-        else:
-            self.current_action = f"💭 รอ {partner.name}"
-
-    # ────────────────────────────────────────────────────────────────
-    # 🤖 Groq API
-    # ────────────────────────────────────────────────────────────────
-    def _ask_groq(self, item1: str, item2: str, stats: dict) -> dict:
-        if not GROQ_API_KEY:
-            return {"name": f"{item1}+{item2}", "use": "ไม่ทราบ"}
-        stats_text = ", ".join(f"{k}: {v}" for k, v in stats.items() if v > 0)
-        prompt = (
-            f"มนุษย์ยุคหินชื่อ {self.name} นำ '{item1}' และ '{item2}' มาทดลองรวมกัน\n"
-            f"คุณสมบัติที่ได้: {stats_text}\n\n"
-            f"จงตอบเป็น JSON เท่านั้น:\n"
-            f'{{ "name": "ชื่อสิ่งประดิษฐ์ภาษาไทย (1-3 คำ)", "use": "ประโยชน์หลักสั้นๆ ภาษาไทย" }}'
+        # Vision scan
+        visible = self.vision.scan(
+            pos=self.body.position,
+            hour=hour,
+            terrain=terrain,
+            animals=animals,
+            partner=partner,
+            fire_system=fire_system,
+            near_fire=fire_system.nearby_fire(self.body.position, radius=3) is not None
         )
-        try:
-            resp = requests.post(
-                GROQ_API_URL,
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-                json={"model": "llama3-8b-8192", "messages": [{"role": "user", "content": prompt}],
-                      "temperature": 0.7, "max_tokens": 80},
-                timeout=5,
-            )
-            resp.raise_for_status()
-            txt = resp.json()["choices"][0]["message"]["content"].strip()
-            txt = txt.replace("```json", "").replace("```", "").strip()
-            result = json.loads(txt)
-            if "name" in result and "use" in result:
-                return result
-        except Exception:
-            pass
-        return {"name": f"{item1}+{item2}", "use": "ไม่ทราบ"}
+        vision_perc = self.vision.to_perception_dict(visible, self.ltm, self.body.position, day=None)
+
+        # Sound scan
+        sounds = self.hearing.listen(
+            self.body.position,
+            animals,
+            weather,
+            fire_system,
+            disasters
+        )
+        sound_perc = self.hearing.to_perception(sounds)
+
+        # Basic info
+        info = terrain.get_info(int(self.body.position[0]), int(self.body.position[1]))
+        has_danger = any(
+            a.a_type == "Carnivore" and not a.sleeping and
+            np.linalg.norm(a.pos - self.body.position[:2]) <= 4
+            for a in animals
+        )
+        partner_dist = np.linalg.norm(self.body.position[:2] - partner.body.position[:2])
+
+        # Build perception dict
+        perception = {
+            "temp_c": weather.global_temperature,
+            "hour": hour,
+            "partner_dist": partner_dist,
+            "partner_sleeping": partner.sleeping,
+            "partner_hungry": partner.brain.drives.hunger > 70,
+            "danger": has_danger,
+            "has_food": info["food_level"] > 20,
+            "has_water": info.get("is_water", False),
+            "has_fire": fire_system.nearby_fire(self.body.position, radius=3) is not None,
+            "has_cooked_food": has_cooked_food,
+            "biome_food": info["food_level"],
+            "is_night": hour >= 21 or hour < 6,
+            "inventory": self.inventory,
+            "has_child_nearby": False,  # จะ implement ทีหลัง
+            # vision/sound override
+            "sees_food": vision_perc.get("sees_food", False),
+            "sees_water": vision_perc.get("sees_water", False),
+            "sees_fire": vision_perc.get("sees_fire", False),
+            "sees_predator": vision_perc.get("sees_predator", False),
+            "mem_food_pos": vision_perc.get("mem_food_pos"),
+            "mem_water_pos": vision_perc.get("mem_water_pos"),
+            "mem_fire_pos": vision_perc.get("mem_fire_pos"),
+            "hears_danger": sound_perc.get("hears_danger", False),
+        }
+        return perception, visible, sounds
 
     # ────────────────────────────────────────────────────────────────
-    # 🧪 ทดลองผสมวัตถุดิบ (เฉพาะเมื่อตื่น & ไม่เร่งด่วน)
+    # 🧠 เรียก brain.step() และ execute action (จะถูกเรียกจาก server.py)
+    # ────────────────────────────────────────────────────────────────
+    def decide_action(self, perception: dict) -> str:
+        """เรียก brain.step() และคืน action"""
+        action = self.brain.step(perception)
+        self.current_action = action
+        return action
+
+    # ────────────────────────────────────────────────────────────────
+    # 🗣️ ภาษา
+    # ────────────────────────────────────────────────────────────────
+    def speak(self, context: str, partner, day: int):
+        """พูดตาม drive ที่โดดเด่น"""
+        if self.sleeping:
+            return None
+        dominant, level = self.brain.drives.dominant_pain
+        if level < 50:
+            return None
+        utterance = self.lang.speak(
+            intent=dominant,
+            context=context,
+            day=day,
+            partner_dist=np.linalg.norm(self.body.position[:2] - partner.body.position[:2])
+        )
+        if utterance:
+            self.last_utterance = utterance
+            # ให้ partner ได้ยิน
+            if np.linalg.norm(self.body.position[:2] - partner.body.position[:2]) <= 10:
+                partner.lang.hear(utterance, context)
+            return utterance
+        return None
+
+    # ────────────────────────────────────────────────────────────────
+    # 🧪 Experiment (Crafting)
     # ────────────────────────────────────────────────────────────────
     def experiment(self):
-        if self.sleeping or self.needs.urgent in ("eat", "toilet"):
+        if self.sleeping:
             return None, None, None
         if len(self.inventory) < 2:
             return None, None, None
-
         items = random.sample(self.inventory, 2)
         attr1 = self.materials_attr.get(items[0], {"hard": 1})
         attr2 = self.materials_attr.get(items[1], {"hard": 1})
         stats = {
-            "ความคม":        attr1.get("sharp", 0)      + attr2.get("sharp", 0),
-            "ความแข็ง":      attr1.get("hard", 0)       + attr2.get("hard", 0),
-            "ความร้อน":      attr1.get("heat", 0)       + attr2.get("heat", 0),
-            "ความยาว/ระยะ":  attr1.get("length", 0)     + attr2.get("length", 0),
-            "การกันหนาว":    attr1.get("insulation", 0) + attr2.get("insulation", 0),
-            "การยึดเหนี่ยว": attr1.get("binding", 0)    + attr2.get("binding", 0),
+            "ความคม": attr1.get("sharp", 0) + attr2.get("sharp", 0),
+            "ความแข็ง": attr1.get("hard", 0) + attr2.get("hard", 0),
+            "ความร้อน": attr1.get("heat", 0) + attr2.get("heat", 0),
+            "ความยาว/ระยะ": attr1.get("length", 0) + attr2.get("length", 0),
+            "การกันหนาว": attr1.get("insulation", 0) + attr2.get("insulation", 0),
+            "การยึดเหนี่ยว": attr1.get("binding", 0) + attr2.get("binding", 0),
         }
-        invention = self._ask_groq(items[0], items[1], stats)
+        # ถ้ามี Groq API key ก็เรียก ไม่งั้นใช้ default
+        invention = self._invent_name(items[0], items[1], stats)
         key = tuple(sorted(items))
         self.knowledge[key] = invention
         return items, stats, invention
 
-    # ────────────────────────────────────────────────────────────────
-    # ⚙️ Physics update
-    # ────────────────────────────────────────────────────────────────
-    def update_physics(self, terrain_info: dict, partner_pos: list):
-        days = (datetime.now() - self.birth_time).total_seconds() / 86400
-        self.age = 25.0 + (days / 365.25)
-
-        # Get terrain height at current (x,y) position
-        # For now, use a simple mapping from biome ID to a rough height in meters
-        # This needs to be improved with actual heightmap data from terrain.py
-        terrain_elevation_m = terrain_info.get("elevation_m", 0.0)
-
-        # Apply physics step to the body
-        self.body.physics_step(terrain_elevation_m)
-
-        # Update HumanAI's pos (integer grid) from body's float position for compatibility
-        self.pos = [int(self.body.position[0]), int(self.body.position[1])]
-
-        if not self.sleeping:
-            # Recalculate work based on new physics (e.g., vertical movement, speed)
-            # For now, a simplified version based on movement magnitude
-            movement_magnitude = np.linalg.norm(self.body.velocity)
-            work = 0.005 * (self.mass / 70.0) * (movement_magnitude * 0.5 + 1.0) # Simplified work calculation
-            self.u_energy -= work
-
-        # Distance to partner now uses body.position
-        partner_pos_np = np.array([float(partner_pos[0]), float(partner_pos[1]), 0.0]) # Assuming partner_pos is [x,y]
-        dist = np.linalg.norm(self.body.position[0:2] - partner_pos_np[0:2]) # Only horizontal distance for bond
-        if dist < 1.0: # If very close
-            self.bond = min(100, self.bond + 0.03)
+    def _invent_name(self, item1, item2, stats):
+        """สร้างชื่อสิ่งประดิษฐ์ง่ายๆ (ไม่ใช้ API ถ้าไม่มี)"""
+        # default logic
+        if "หิน" in item1 and "ไม้" in item2:
+            return {"name": "ขวานหิน", "use": "ตัดไม้ ล่าสัตว์"}
+        if "เถาวัลย์" in item1 or "เถาวัลย์" in item2:
+            return {"name": "เชือก", "use": "ผูกมัด"}
+        if "ใบไม้" in item1 or "ใบไม้" in item2:
+            return {"name": "เครื่องนุ่งห่ม", "use": "กันหนาว"}
+        return {"name": f"{item1}+{item2}", "use": "ไม่ทราบ"}
 
     # ────────────────────────────────────────────────────────────────
-    # 📊 สรุปสถานะ
+    # ⚙️ Physics Update (เรียกทุก hour ใน simulation)
+    # ────────────────────────────────────────────────────────────────
+    def update_physics(self, terrain_elevation: float):
+        """อัปเดตฟิสิกส์ของ body"""
+        self.body.physics_step(terrain_elevation)
+
+    # ────────────────────────────────────────────────────────────────
+    # 📊 Properties
     # ────────────────────────────────────────────────────────────────
     @property
-    def pos(self) -> list:
+    def pos(self):
         return [int(self.body.position[0]), int(self.body.position[1])]
 
     @pos.setter
-    def pos(self, value: list):
+    def pos(self, value):
         self.body.position[0] = float(value[0])
         self.body.position[1] = float(value[1])
+        self.body.position[2] = float(value[2]) if len(value) > 2 else 0.0
 
     @property
-    def status_bar(self) -> str:
-        n = self.needs
-        return (f"{'😴' if self.sleeping else '🧍'} {self.name} | "
-                f"🍖{n.hunger:.0f} 🚽{n.bladder:.0f} "
-                f"💤{n.sleepy:.0f} 💕{n.libido:.0f} | "
-                f"{self.current_action}")
+    def health(self):
+        return self.body.health
+
+    @health.setter
+    def health(self, value):
+        self.body.health = value
+
+    @property
+    def u_energy(self):
+        return self.body.u_energy
+
+    @u_energy.setter
+    def u_energy(self, value):
+        self.body.u_energy = value
+
+    @property
+    def age(self):
+        return self.body.age_years
+
+    @age.setter
+    def age(self, value):
+        self.body.age = value * 365
+
+    @property
+    def summary(self):
+        """สรุปสำหรับ UI"""
+        return {
+            "name": self.name,
+            "sex": self.sex,
+            "pos": self.pos,
+            "health": round(self.body.health, 1),
+            "age": round(self.body.age_years, 1),
+            "action": self.current_action,
+            "sleeping": self.sleeping,
+            "emotion": self.brain.emotion.label,
+            "drives": {
+                "hunger": round(self.brain.drives.hunger, 1),
+                "tired": round(self.brain.drives.tired, 1),
+                "cold": round(self.brain.drives.cold, 1),
+                "fear": round(self.brain.drives.fear, 1),
+                "lonely": round(self.brain.drives.lonely, 1),
+                "bored": round(self.brain.drives.bored, 1),
+            },
+            "skills": self.brain.skill,
+            "inventory": self.inventory,
+            "language": self.lang.summary,
+            "last_speech": " ".join(self.last_utterance.words) if self.last_utterance else "",
+        }
