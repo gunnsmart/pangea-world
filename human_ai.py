@@ -12,6 +12,12 @@ from senses import VisionSystem, SoundSystem, LongTermMemory
 from language import ProtoLanguage
 
 class HumanAI:
+    def apply_movement_impulse(self, direction: np.ndarray, speed: float = 1.0):
+    """ใช้แรงเพื่อเปลี่ยนความเร็ว (จำลองการเคลื่อนที่)"""
+    # direction ควรเป็น unit vector
+    force = direction * speed * 5.0   # ปรับตามความสมดุล
+    self.body.acceleration += force
+    
     def __init__(self, name: str, height: float, mass: float, partner_name: str, time_scale: float = 1.0):
         self.name = name
         self.partner_name = partner_name
