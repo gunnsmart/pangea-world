@@ -25,6 +25,14 @@ class HumanAI:
         self.visible = []
         self.sounds = []
 
+    @property
+    def health(self):
+    return self.body.health
+
+    @property
+    def u_energy(self):
+    return self.body.u_energy
+
     def perceive(self, world, partner) -> Dict[str, Any]:
         info = world.terrain.get_info(int(self.pos[0]), int(self.pos[1]))
         self.visible = self.vision.scan(
