@@ -1,14 +1,9 @@
-# models/fire.py
 import random
 import math
 from dataclasses import dataclass
-import copy
 from typing import List, Optional, Dict, Any
+import copy
 from utils.config import FUEL_BURN_RATE, IGNITION_TEMP_C, FIRE_TEMP_C, COOKING_TEMP_C, MAILLARD_TEMP_C, WARMTH_RADIUS
-
-
-
-# ... (ส่วน Campfire และ FireSystem เหมือนเดิม) ...
 
 @dataclass
 class Food:
@@ -34,23 +29,6 @@ class Food:
     @property
     def kcal(self):
         return self.cooked_kcal if self.cooked else self.raw_kcal * 0.7
-
-class FireSystem:
-    # ... (existing code) ...
-    def cook_food(self, food_name: str, fire: Campfire):
-        if not fire or not fire.active:
-            return None, "❌ ไม่มีไฟ"
-        food_types = {
-            "เนื้อกวาง": Food("เนื้อกวาง", 200),
-            "เนื้อกระต่าย": Food("เนื้อกระต่าย", 120),
-            "ปลา": Food("ปลา", 180),
-        }
-        template = food_types.get(food_name)
-        if not template:
-            return None, f"❌ ไม่รู้จัก '{food_name}'"
-        food = copy.copy(template)
-        success, msg = food.cook(fire.fire_temp_c)
-        return food if success else None, msg
 
 @dataclass
 class Campfire:
@@ -81,7 +59,7 @@ class Campfire:
         burn_rate = FUEL_BURN_RATE * (1 + wind)
         burned = min(self.fuel_kg, burn_rate)
         self.fuel_kg -= burned
-        heat_kj = burned * 17000 * 0.9  # rough efficiency
+        heat_kj = burned * 17000 * 0.9
         self.co2_released += burned * 1.47
         target_temp = FIRE_TEMP_C * (self.fuel_kg / 5.0) ** 0.3
         target_temp = max(IGNITION_TEMP_C, min(FIRE_TEMP_C, target_temp))
@@ -157,6 +135,21 @@ class FireSystem:
             if dist <= WARMTH_RADIUS:
                 temp += f.warmth_output / (dist**2)
         return min(50.0, temp)
+
+    def cook_food(self, food_name: str, fire: Campfire):
+        if not fire or not fire.active:
+            return None, "❌ ไม่มีไฟ"
+        food_types = {
+            "เนื้อกวาง": Food("เนื้อกวาง", 200),
+            "เนื้อกระต่าย": Food("เนื้อกระต่าย", 120),
+            "ปลา": Food("ปลา", 180),
+        }
+        template = food_types.get(food_name)
+        if not template:
+            return None, f"❌ ไม่รู้จัก '{food_name}'"
+        food = copy.copy(template)
+        success, msg = food.cook(fire.fire_temp_c)
+        return food if success else None, msg
 
     @property
     def active_fires(self) -> List[Campfire]:
