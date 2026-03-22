@@ -2,7 +2,7 @@
 import threading
 import time
 import numpy as np
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Set
 from utils.config import MAP_SIZE, SIM_STEP_INTERVAL, MAX_CATCHUP
 from models.terrain import TerrainMap
 from models.environment import WeatherSystem, DisasterSystem
@@ -34,6 +34,8 @@ class World:
         ]
         self.animals = spawn_wildlife()
         self.event_bus = EventBus()
+        self.dead: Set[str] = set()
+        self.game_over = False
         self._setup_initial_positions()
 
         self.running = True
@@ -60,7 +62,7 @@ class World:
             now = time.monotonic()
             delta = now - last_time
             last_time = now
-            if not self.paused:
+            if not self.paused and not self.game_over:
                 accumulated += delta
                 steps = int(accumulated / SIM_STEP_INTERVAL)
                 steps = min(steps, MAX_CATCHUP)
@@ -76,19 +78,15 @@ class World:
         if self.hour == 0:
             self.day += 1
             self._update_day()
-
-        # hourly updates
         self._update_hourly()
 
     def _update_day(self):
-        # daily systems
         self.weather.step_day()
         dis_events, dis_fx = self.disasters.step_day(self.weather)
         for ev in dis_events:
             self.event_bus.emit("log", ev)
         self.plants.step_day(self.weather.global_moisture, self.weather.global_temperature)
         self.fauna.step_day(self.plants.global_biomass)
-        # apply disaster effects
         if dis_fx["biomass_mod"] != 0:
             self.plants.global_biomass = max(10, self.plants.global_biomass * (1 + dis_fx["biomass_mod"]))
         if dis_fx["animal_deaths"] > 0:
@@ -98,36 +96,144 @@ class World:
             for a in self.animals:
                 a.pos = [np.random.randint(0, MAP_SIZE-1), np.random.randint(0, MAP_SIZE-1)]
 
+        # Apply disaster effects to humans
+        if dis_fx["human_injury"] > 0:
+            for h in self.humans:
+                if random.random() < 0.5:
+                    h.body.health = max(0, h.body.health - dis_fx["human_injury"])
+                    h.brain.receive_pain("injury", dis_fx["human_injury"]/50)
+        if dis_fx["plague_active"]:
+            for h in self.humans:
+                if random.random() < dis_fx["plague_severity"] * 0.05:
+                    if "🦠 โรคระบาด" not in h.body.diseases:
+                        h.body.diseases.append("🦠 โรคระบาด")
+                        h.body.health = max(0, h.body.health - 15)
+                        h.brain.receive_pain("disease", 0.5)
+                        self.event_bus.emit("log", f"🦠 {h.name} ติดโรค!")
+
+        # Daily human system (pregnancy, etc.)
+        hunted = self.humansys.step_day(self.plants.global_biomass, self.fauna.deer_pop)
+        self.fauna.deer_pop = max(0, self.fauna.deer_pop - hunted)
+
+        # Save snapshot and timeseries every day
+        try:
+            from persistence.database import save_snapshot, record_timeseries
+            state_dict = {
+                "day": self.day,
+                "weather_day": self.weather.day,
+                "temp": self.weather.global_temperature,
+                "moisture": self.weather.global_moisture,
+                "biomass": self.plants.global_biomass,
+                "rabbit": self.fauna.rabbit_pop,
+                "deer": self.fauna.deer_pop,
+                "tiger": self.fauna.tiger_pop,
+                "human_pop": self.humansys.human_pop,
+            }
+            save_snapshot(self.day, state_dict, self.humans)
+            record_timeseries(self.day, self.fauna, self.plants.global_biomass,
+                              self.physics.atmo.co2_ppm, self.weather.global_temperature,
+                              self.humansys.human_pop)
+        except Exception as e:
+            print(f"[DB] persistence error: {e}")
+
     def _update_hourly(self):
-        # fire
+        # Fire
         fire_events, _ = self.fires.step_hour(self.weather.global_temperature)
         for ev in fire_events:
             self.event_bus.emit("log", ev)
 
-        # humans
+        # Humans
         for h in self.humans:
             if not h.body.alive:
                 continue
             partner = self.humans[1] if h.name == "Adam" else self.humans[0]
             perception = h.perceive(self, partner)
             action = h.decide(perception)
-            h.act(action, self, partner)
+            h.current_action = action
+            h.act(action, self, partner)   # execute action
 
-            # physics update
+            # Update physics (position)
             biome = self.terrain.template[int(h.pos[0])][int(h.pos[1])]
             elev = self.terrain.get_elevation(biome)
             h.update_physics(elev)
 
-            # body step
-            h.body.step_day(
+            # Body step (health, energy, hormones)
+            body_events = h.body.step_day(
                 calories_in=800 if h.brain.drives.hunger < 60 else 200,
                 is_active=not h.sleeping,
                 stressed=(h.brain.drives.hunger >= 85),
                 bonded=(np.linalg.norm(h.pos - partner.pos) <= 3)
             )
+            for ev in body_events:
+                self.event_bus.emit("log", ev)
 
-        # animals
+            # Pain/pleasure signals from body
+            if h.body.health < 50:
+                h.brain.receive_pain("injury", (50 - h.body.health)/100)
+            if h.body.u_energy < 500:
+                h.brain.receive_pain("hunger", (500 - h.body.u_energy)/500)
+            if h.brain.drives.cold > 60:
+                h.brain.receive_pain("cold", (h.brain.drives.cold-60)/80)
+            if h.brain.drives.tired > 90 and not h.sleeping:
+                h.brain.receive_pain("tired", 0.3)
+            if h.brain.drives.hunger < 30:
+                h.brain.receive_pleasure("food", 0.5)
+            if self.fires.nearby_fire(h.pos) is not None:
+                h.brain.receive_pleasure("warmth", 0.3)
+
+            # Memory: episodic
+            # Use last_pain as outcome (negative if pain, positive if pleasure)
+            outcome = -h.brain.last_pain  # roughly
+            context_str = "+".join([v.kind for v in h.visible[:3]] + [s.kind for s in h.sounds[:2]]) or "normal"
+            h.ltm.store_episode(
+                day=self.day, hour=self.hour, pos=[int(h.pos[0]), int(h.pos[1])],
+                action=action, outcome=outcome,
+                emotion=h.brain.emotion.label,
+                context=context_str,
+                importance=min(1.0, abs(outcome)+0.2)
+            )
+
+            # Spatial memory
+            for vo in h.visible[:5]:
+                if vo.kind == "food" and vo.distance <= 3:
+                    h.ltm.remember_place("food_rich", vo.pos, self.day)
+                elif vo.kind == "water":
+                    h.ltm.remember_place("water", vo.pos, self.day)
+                elif vo.kind == "fire":
+                    h.ltm.remember_place("fire_spot", vo.pos, self.day)
+                elif vo.kind == "animal_pred" and vo.distance <= 5:
+                    h.ltm.remember_place("danger", vo.pos, self.day)
+
+            # Semantic learning
+            if action == "start_fire" and outcome > 0:
+                h.ltm.learn_fact("fire=warm", 1.0)
+            if action == "eat_cooked" and outcome > 0.5:
+                h.ltm.learn_fact("cooked_food=better", 1.0)
+            if perception.get("sees_predator"):
+                h.ltm.learn_fact("predator=danger", 1.0)
+
+            # Decay memory occasionally
+            if self.day % 10 == 0:
+                h.ltm.decay(self.day)
+
+            # Wake up if rested enough
+            if h.sleeping and 6 <= self.hour < 21 and h.brain.drives.tired < 30:
+                h.sleeping = False
+                h.brain.receive_pleasure("rest", 0.5)
+                self.event_bus.emit("log", f"🌅 {h.name} ตื่นนอน")
+
+            # Death check
+            h.body.health = h.health
+            if not h.body.alive and h.name not in self.dead:
+                self.dead.add(h.name)
+                self.event_bus.emit("log", f"💀 {h.name} เสียชีวิต (อายุ {h.body.age_years:.1f} ปี)")
+                if len(self.dead) >= 2:
+                    self.game_over = True
+                    self.event_bus.emit("log", "🌑 สายพันธุ์มนุษย์สูญพันธุ์")
+
+        # Animals
         new_animals = []
+        dead_animals = []
         for a in self.animals:
             events = a.update(self.hour, self.terrain, self.weather.global_temperature)
             for ev_type, ev_data in events:
@@ -135,29 +241,62 @@ class World:
                     new_animals.append(ev_data)
                     self.event_bus.emit("log", f"🐣 {a.species} (Gen{a.generation}) คลอดลูก!")
                 elif ev_type == "death":
+                    dead_animals.append(a)
                     self.event_bus.emit("log", f"💀 {a.species} เสียชีวิต (อายุ {a.age_years:.1f} ปี)")
             if a.alive:
                 a.move_smart(self.terrain, MAP_SIZE)
+                if a.a_type == "Herbivore" and not a.sleeping:
+                    if a.drives.hunger > 40:
+                        a.eat_vegetation(self.terrain)
+                    if a.drives.thirst > 50:
+                        a.drink_water(self.terrain)
+                if a.a_type == "Carnivore" and not a.sleeping and a.drives.hunger > 50:
+                    for prey in self.animals:
+                        if (prey.alive and not prey.sleeping and prey.a_type == "Herbivore"
+                                and abs(prey.pos[0]-a.pos[0]) + abs(prey.pos[1]-a.pos[1]) <= 1):
+                            a.energy = min(1000, a.energy + a.energy_gain)
+                            a.drives.hunger = max(0, a.drives.hunger - 60)
+                            prey.health -= 80
+                            if prey.health <= 0:
+                                prey.alive = False
+                                self.event_bus.emit("log", f"🩸 {a.species} ล่า {prey.species} สำเร็จ")
+                            break
+                if a.drives.libido > 70 and not a.sleeping and not a.pregnant:
+                    for other in self.animals:
+                        if (other.alive and other.species == a.species and other.sex != a.sex
+                                and abs(other.pos[0]-a.pos[0]) + abs(other.pos[1]-a.pos[1]) <= 2):
+                            if a.try_mate(other):
+                                self.event_bus.emit("log", f"💕 {a.species} สืบพันธุ์ (Gen{a.generation})")
+                                break
 
-        self.animals = [a for a in self.animals if a.alive] + new_animals
+        # Apply animal changes
+        self.animals = [a for a in self.animals if a.alive and a not in dead_animals] + new_animals
+        # Limit animal count
+        MAX_ANIMALS = 60
+        if len(self.animals) > MAX_ANIMALS:
+            self.animals.sort(key=lambda x: x.age, reverse=True)
+            self.animals = self.animals[:MAX_ANIMALS]
 
-        # relationship
-        dist = np.linalg.norm(self.humans[0].pos - self.humans[1].pos)
-        mated = "mate" in self.humans[0].current_action or "mate" in self.humans[1].current_action
-        rel_events = self.relationship.step_day(
-            dist=int(dist),
-            mated_today=mated,
-            a_hungry=(self.humans[0].brain.drives.hunger>=85),
-            b_hungry=(self.humans[1].brain.drives.hunger>=85)
-        )
-        for ev in rel_events:
-            self.event_bus.emit("log", ev)
-
-        # sync fauna counts
+        # Sync fauna counts
         self.fauna.rabbit_pop = sum(1 for a in self.animals if a.species == "กระต่ายป่า")
         self.fauna.deer_pop = sum(1 for a in self.animals if a.species == "กวางเรนเดียร์")
         self.fauna.tiger_pop = sum(1 for a in self.animals if a.species == "เสือเขี้ยวดาบ")
         self.fauna.eagle_pop = sum(1 for a in self.animals if a.species == "นกอินทรี")
+
+        # Relationship
+        dist_ab = np.linalg.norm(self.humans[0].pos - self.humans[1].pos)
+        mated = "mate" in self.humans[0].current_action or "mate" in self.humans[1].current_action
+        rel_events = self.relationship.step_day(
+            dist=int(dist_ab),
+            mated_today=mated,
+            a_hungry=(self.humans[0].brain.drives.hunger >= 85),
+            b_hungry=(self.humans[1].brain.drives.hunger >= 85)
+        )
+        for ev in rel_events:
+            self.event_bus.emit("log", ev)
+
+        # Mark that map needs redraw
+        self.invalidate()
 
     def _notify_listeners(self):
         snapshot = self.to_dict()
@@ -186,3 +325,7 @@ class World:
             "fires": [f.to_dict() for f in self.fires.active_fires],
             "history": self.event_bus.get_logs(30),
         }
+
+    def invalidate(self):
+        # stub for caching (could be implemented)
+        pass
