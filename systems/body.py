@@ -1,8 +1,8 @@
 # systems/body.py
 import random
 import numpy as np
-from dataclasses import dataclass, field
-from typing import Optional, List
+from dataclasses import dataclass
+from typing import List
 from utils.config import *
 
 @dataclass
