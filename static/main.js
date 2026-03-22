@@ -1,4 +1,4 @@
-// main_responsive.js — Responsive UI with Canvas Scaling & Touch Support
+// main.js — Responsive UI with Canvas Scaling & Touch Support
 // แก้ไขและเพิ่มฟังก์ชันให้สมบูรณ์
 
 const canvas = document.getElementById('map-canvas');
@@ -10,15 +10,8 @@ let lastState = null;
 let lastDay = -1;
 let mapImageData = null;
 
-// ── Real-time Interpolation ──────────────────────────────────────────────────
-let lastUpdateTime = Date.now();
-let entityInterpolationData = {}; // Store previous positions for interpolation
-
-// ── Speech Bubbles ───────────────────────────────────────────────────────────
-let activeSpeechBubbles = []; // Array of {speaker, text, startTime, duration}
-
 // ── Game State ───────────────────────────────────────────────────────────────
-let gameOver = false;   // ใช้เพื่อป้องกันการอัปเดตซ้ำเมื่อจบเกมแล้ว
+let gameOver = false;   // ใช้ป้องกันการอัปเดตซ้ำเมื่อจบเกมแล้ว
 
 // ── Detect screen size and adjust CELL size ──────────────────────────────────
 function updateCanvasSize() {
@@ -68,7 +61,6 @@ async function fetchState() {
   } catch(e) {
     console.error('fetch error', e);
     document.getElementById('status-dot').classList.remove('running');
-    // แสดงข้อความแจ้งเตือนใน log ถ้าต้องการ
     addSystemLog('⚠️ ไม่สามารถติดต่อเซิร์ฟเวอร์ได้');
   }
 }
@@ -82,12 +74,92 @@ function renderPartial(data) {
   if (data.atmosphere) updateEco(lastState);
   if (data.disasters) updateDisasters(lastState);
   if (data.fire_spots) updateFireInfo(lastState);
-  if (data.dialogues) updateDialoguePanel(lastState);
+  if (data.dialogue) updateDialoguePanel(lastState);
   
   // วาด entities (humans + animals) บน canvas ที่มี map อยู่แล้ว
   if (lastState && lastState.map) {
     drawEntitiesOnly(lastState.humans, lastState.animals || []);
   }
+  
+  // ตรวจสอบ Game Over ทุกครั้งที่มีการอัปเดต
+  checkGameOver(lastState);
+}
+
+// ── ฟังก์ชันเพิ่มเติมที่ขาดหาย ──────────────────────────────────────────────
+function updateFireInfo(s) {
+  const fireDiv = document.getElementById('fire-info');
+  if (!fireDiv) return;
+  if (s.fire_spots && s.fire_spots.length > 0) {
+    fireDiv.innerHTML = s.fire_spots.map(f => 
+      `<div style="margin-bottom:4px">🔥 ที่ (${f.x},${f.y}) | ความรุนแรง ${f.intensity}</div>`
+    ).join('');
+  } else {
+    fireDiv.innerHTML = 'ไม่มีกองไฟ';
+  }
+}
+
+function updateDisasters(s) {
+  const dsec = document.getElementById('disaster-section');
+  if (!dsec) return;
+  if (s.disasters && s.disasters.length > 0) {
+    dsec.innerHTML = s.disasters.map(d =>
+      `<div class="alert">⚠️ ${d.label} — ${(d.severity*100).toFixed(0)}% | เหลือ ${d.days_left} วัน</div>`
+    ).join('');
+  } else {
+    dsec.innerHTML = '';
+  }
+}
+
+function updateDialoguePanel(s) {
+  const panel = document.getElementById('dialogue-panel');
+  if (!panel) return;
+  if (s.dialogue && s.dialogue.length > 0) {
+    panel.innerHTML = s.dialogue.map(d => `
+      <div class="dialogue-entry">
+        <strong>${d.speaker}</strong> <span style="color:#4a6080; font-size:10px">${d.time || ''}</span><br>
+        ${d.words}
+      </div>
+    `).join('');
+  } else {
+    panel.innerHTML = '<div class="dialogue-entry">ยังไม่มีบทสนทนา</div>';
+  }
+}
+
+// ── Game Over Logic ───────────────────────────────────────────────────────
+function checkGameOver(state) {
+  if (!state || !state.humans) return;
+  const extinct = state.humans.length === 0 || state.game_over === true;
+  if (extinct && !gameOver) {
+    gameOver = true;
+    const banner = document.getElementById('game-over-banner');
+    if (banner) banner.classList.add('show');
+  } else if (!extinct && gameOver) {
+    gameOver = false;
+    const banner = document.getElementById('game-over-banner');
+    if (banner) banner.classList.remove('show');
+  }
+}
+
+// ── Canvas Map ───────────────────────────────────────────────────────────
+function drawMap(mapData) {
+  if (!mapData || mapData.length === 0) return;
+
+  const imgData = ctx.createImageData(SIZE * CELL, SIZE * CELL);
+  const d = imgData.data;
+
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const [R, G, B] = mapData[r][c];
+      for (let dy = 0; dy < CELL; dy++) {
+        for (let dx = 0; dx < CELL; dx++) {
+          const idx = ((r*CELL+dy)*SIZE*CELL + (c*CELL+dx)) * 4;
+          d[idx]=R; d[idx+1]=G; d[idx+2]=B; d[idx+3]=255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  mapImageData = ctx.getImageData(0, 0, SIZE*CELL, SIZE*CELL);
 }
 
 // วาดเฉพาะ humans+animals บน canvas ที่มี map อยู่แล้ว
@@ -143,34 +215,6 @@ function drawEntities(humans, animals) {
   }
 }
 
-function sendCmd(cmd) {
-  fetch(`/api/command/${cmd}`, { method: 'POST' })
-    .then(() => fetchState())
-    .catch(e => console.error('Command error:', e));
-}
-
-// ── Canvas Map ───────────────────────────────────────────────────────────
-function drawMap(mapData) {
-  if (!mapData || mapData.length === 0) return;
-
-  const imgData = ctx.createImageData(SIZE * CELL, SIZE * CELL);
-  const d = imgData.data;
-
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      const [R, G, B] = mapData[r][c];
-      for (let dy = 0; dy < CELL; dy++) {
-        for (let dx = 0; dx < CELL; dx++) {
-          const idx = ((r*CELL+dy)*SIZE*CELL + (c*CELL+dx)) * 4;
-          d[idx]=R; d[idx+1]=G; d[idx+2]=B; d[idx+3]=255;
-        }
-      }
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
-  mapImageData = ctx.getImageData(0, 0, SIZE*CELL, SIZE*CELL);
-}
-
 // ── Stats ────────────────────────────────────────────────────────────────
 function updateStats(s) {
   setText('s-temp',     `${s.temp}°C`);
@@ -182,47 +226,6 @@ function updateStats(s) {
   setText('s-tiger',    s.fauna.tiger);
   setText('s-eagle',    s.fauna.eagle);
   updateDisasters(s);
-}
-
-function updateDisasters(s) {
-  const dsec = document.getElementById('disaster-section');
-  if (s.disasters && s.disasters.length > 0) {
-    dsec.innerHTML = s.disasters.map(d =>
-      `<div class="alert">⚠️ ${d.label} — ${(d.severity*100).toFixed(0)}% | เหลือ ${d.days_left} วัน</div>`
-    ).join('');
-  } else {
-    dsec.innerHTML = '';
-  }
-}
-
-// ── Fire Info ───────────────────────────────────────────────────────────
-function updateFireInfo(s) {
-  const fireDiv = document.getElementById('fire-info');
-  if (!fireDiv) return;
-  if (s.fire_spots && s.fire_spots.length > 0) {
-    fireDiv.innerHTML = s.fire_spots.map(f => 
-      `<div style="margin-bottom:4px">🔥 ที่ (${f.x},${f.y}) | ความรุนแรง ${f.intensity}</div>`
-    ).join('');
-  } else {
-    fireDiv.innerHTML = 'ไม่มีกองไฟ';
-  }
-}
-
-// ── Dialogue Panel ──────────────────────────────────────────────────────
-function updateDialoguePanel(s) {
-  const panel = document.getElementById('dialogue-panel');
-  if (!panel) return;
-  if (s.dialogues && s.dialogues.length > 0) {
-    // สมมติ dialogues เป็น array ของ object {speaker, text, time}
-    panel.innerHTML = s.dialogues.map(d => `
-      <div class="dialogue-entry">
-        <strong>${d.speaker}</strong> <span style="color:#4a6080; font-size:10px">${d.time || ''}</span><br>
-        ${d.text}
-      </div>
-    `).join('');
-  } else {
-    panel.innerHTML = '<div class="dialogue-entry">ยังไม่มีบทสนทนา</div>';
-  }
 }
 
 // ── Chart ────────────────────────────────────────────────────────────────
@@ -361,21 +364,6 @@ function updateHeader(s) {
   if (btnStart && btnPause) {
     btnStart.classList.toggle('active', s.running);
     btnPause.classList.toggle('active', !s.running);
-  }
-}
-
-// ── Game Over Logic ───────────────────────────────────────────────────────
-function checkGameOver(state) {
-  if (!state || !state.humans) return;
-  const extinct = state.humans.length === 0;
-  if (extinct && !gameOver) {
-    gameOver = true;
-    const banner = document.getElementById('game-over-banner');
-    if (banner) banner.classList.add('show');
-  } else if (!extinct && gameOver) {
-    gameOver = false;
-    const banner = document.getElementById('game-over-banner');
-    if (banner) banner.classList.remove('show');
   }
 }
 
