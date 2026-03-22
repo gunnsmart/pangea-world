@@ -522,7 +522,7 @@ def _step_world():
         )
 
         # ── Vision scan using spatial grid ─────────────────────────
-        nearby_objects = sim._spatial.query_radius(h.pos, radius=8)
+        nearby_objects = sim._spatial.query_radius(h.pos, 2)
         nearby_animals = [o for o in nearby_objects if hasattr(o, 'a_type')]
 
         h.visible = h.vision.scan(
