@@ -59,6 +59,7 @@ class Body:
 
     def __init__(self, name: str, sex: str, mass: float, height: float, time_scale: float = 1.0):
     ...
+        self.body = Body(name, self.sex, mass, height, time_scale=time_scale)
         self.time_scale = time_scale
         self.name   = name
         self.sex    = sex      # "M" หรือ "F"
