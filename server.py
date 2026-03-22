@@ -37,7 +37,6 @@ import random
 import numpy as np
 
 # Simple mapping from biome ID to a rough elevation in meters
-# This is a placeholder and can be refined with actual heightmap data from terrain.py
 BIOME_ELEVATION_M = {
     0: 0.0,   # DEEP_WATER
     1: 0.1,   # SHALLOW
@@ -113,7 +112,7 @@ class SimState:
         self.lock = threading.Lock()
         self.running = True
         self.day = 0
-        self.hour = 12
+        self.hour = 12   # เริ่มต้นเวลา 12:00 น. (ใช้ภายใน sim)
         self.history: list[str] = []
         self.cooked_foods: list[dict] = []
         self.dead: set = set()
@@ -185,7 +184,7 @@ class SimState:
             # force rebuild
             now_thai = datetime.now(TZ_THAI)
             season   = get_season(self.weather.day)
-            phase    = self._day_phase(now_thai.hour)
+            phase    = self._day_phase(self.hour)   # ใช้ self.hour แทน now_thai.hour
 
             # map pixels (50x50 RGB)
             img = self._build_map()
@@ -281,6 +280,15 @@ class SimState:
                     for a in self.animals
                 ],
             }
+            # ── เพิ่ม fire_spots ───────────────────────────────────
+            result["fire_spots"] = [
+                {"x": f.pos[0], "y": f.pos[1], "intensity": f.intensity}
+                for f in self.fs.active_fires
+            ]
+            # ตรวจสอบว่า dialogue มีอยู่แล้ว (แน่ใจ)
+            if "dialogue" not in result:
+                result["dialogue"] = []
+            # disasters มีอยู่แล้ว (self.disasters.active_summary)
             self._snapshot_cache = result
             self._snapshot_dirty = False
             return result
@@ -328,7 +336,7 @@ class SimState:
             img[hr][hc] = [255, 255, 255]
 
         # night overlay
-        brightness = self._brightness(datetime.now(TZ_THAI).hour)
+        brightness = self._brightness(self.hour)   # ใช้ self.hour
         if brightness < 1.0:
             for r in range(SIZE):
                 for c in range(SIZE):
@@ -430,13 +438,21 @@ def run_simulation():
         time.sleep(10.0)   # check ทุก 10 วิ — ประหยัด CPU
 
 
+# (ส่วนที่เหลือของไฟล์จะอยู่ใน Part 2)
+# ── ต่อจาก Part 1 ──
+
+# ตัวแปร SAVE_INTERVAL_STEPS กำหนดไว้ที่ส่วนท้าย (ต้องมีก่อนใช้)
+SAVE_INTERVAL_STEPS = 1   # save ทุก 1 step = ทุก 1 ชั่วโมง sim (ทุก 1 วินาทีจริง)
+
 def _step_world():
     """Step โลก 1 ชั่วโมง sim (เรียกภายใน lock)"""
-    hour = datetime.now(TZ_THAI).hour
+    # ใช้ self.hour แทน datetime.now
+    sim.hour = (sim.hour + 1) % 24
+    hour = sim.hour
+
     SIZE = sim.SIZE
 
     sim.day  += 1
-    sim.hour  = hour
 
     # ── Weather ──────────────────────────────────────────────────────
     w_events = sim.weather.step_day()
@@ -500,31 +516,13 @@ def _step_world():
             for a in sim.animals
         )
 
-        perc = {
-            "temp_c":           sim.weather.global_temperature,
-            "hour":             hour,
-            "partner_dist":     abs(h.pos[0]-partner.pos[0])+abs(h.pos[1]-partner.pos[1]),
-            "partner_sleeping": partner.sleeping,
-            "partner_hungry":   partner.brain.drives.hunger > 70,   # ✅ รู้ว่า partner หิวไหม
-            "danger":           has_danger,
-            "has_food":         info_now["food_level"]>20 or sim.fauna.deer_pop>5,
-            "has_water":        info_now.get("is_water", False),
-            "has_fire":         near_fire is not None,
-            "has_cooked_food":  has_cooked,
-            "biome_food":       info_now["food_level"],
-            "is_night":         hour>=21 or hour<6,
-            "inventory":        h.inventory,
-            "has_child_nearby": False,
-        }
-
-        # ── Vision scan ────────────────────────────────────────────
-        # ✅ Vision ใช้ spatial grid — เร็วกว่า full scan ~10x
+        # ── Vision scan using spatial grid ─────────────────────────
         nearby_objects = sim._spatial.query_radius(h.pos, radius=8)
-        nearby_animals = [o for o in nearby_objects
-                          if hasattr(o, 'a_type')]
+        nearby_animals = [o for o in nearby_objects if hasattr(o, 'a_type')]
+
         h.visible = h.vision.scan(
             pos=h.pos, hour=hour, terrain=sim.terrain,
-            animals=nearby_animals,   # แค่สัตว์ใกล้ๆ ไม่ใช่ทั้งหมด
+            animals=nearby_animals,
             partner=partner,
             fire_system=sim.fs,
             near_fire=(near_fire is not None),
@@ -540,12 +538,27 @@ def _step_world():
         )
         sound_perc = h.hearing.to_perception(h.sounds)
 
-        # ── Merge perception ────────────────────────────────────────
+        # Build perception dict
+        perc = {
+            "temp_c":           sim.weather.global_temperature,
+            "hour":             hour,
+            "partner_dist":     abs(h.pos[0]-partner.pos[0])+abs(h.pos[1]-partner.pos[1]),
+            "partner_sleeping": partner.sleeping,
+            "partner_hungry":   partner.brain.drives.hunger > 70,
+            "danger":           has_danger,
+            "has_food":         info_now["food_level"]>20 or sim.fauna.deer_pop>5,
+            "has_water":        info_now.get("is_water", False),
+            "has_fire":         near_fire is not None,
+            "has_cooked_food":  has_cooked,
+            "biome_food":       info_now["food_level"],
+            "is_night":         hour>=21 or hour<6,
+            "inventory":        h.inventory,
+            "has_child_nearby": False,
+        }
         perc.update(vision_perc)
         perc.update(sound_perc)
 
-        # ── Brain ใช้ vision+sound เพิ่มความแม่นยำ ──────────────────
-        # override has_food/has_water/has_fire ด้วยสิ่งที่เห็นจริง
+        # override ด้วยสิ่งที่เห็นจริง
         perc["has_food"]  = vision_perc["sees_food"]  or (vision_perc["mem_food_pos"]  is not None)
         perc["has_water"] = vision_perc["sees_water"] or (vision_perc["mem_water_pos"] is not None)
         perc["has_fire"]  = vision_perc["sees_fire"]  or (vision_perc["mem_fire_pos"]  is not None)
@@ -554,7 +567,7 @@ def _step_world():
         action = h.brain.step(perc)
         h.current_action = action
 
-        # ── Language — พูดตาม drive ที่สูงสุด ───────────────────────
+        # ── Language ───────────────────────────────────────────────
         dominant, level = h.brain.drives.dominant_pain
         if level > 50 and not h.sleeping:
             context_str = "+".join([v.kind for v in h.visible[:3]])
@@ -567,18 +580,17 @@ def _step_world():
             if utterance:
                 h.last_utterance = utterance
                 utterance.heard_by = partner.name
-                # partner ได้ยิน → เรียนรู้
                 if perc["partner_dist"] <= 10:
                     learned = partner.lang.hear(utterance, context_str)
                     if learned:
                         _log(f"💬 {partner.name} เรียนรู้คำ: {', '.join(learned)}")
                 _log(f"💬 {h.name}: [{' '.join(utterance.words)}] ({dominant})")
 
-        # Execute
+        # Execute action
         _execute_action(h, partner, action, perc, info_now, near_fire,
                         has_cooked, hour, dis_fx, SIZE)
 
-        # Log detailed action with context
+        # Log detailed action
         if action not in ["rest", "sleep"]:
             hunger_level = "หิวมาก" if h.brain.drives.hunger >= 85 else ("หิวปกติ" if h.brain.drives.hunger >= 50 else "อิ่ม")
             temp_status = "หนาวสั่น" if sim.weather.global_temperature < 15 else ("ร้อน" if sim.weather.global_temperature > 35 else "ปกติ")
@@ -588,27 +600,21 @@ def _step_world():
         elif action == "rest":
             _log(f"🧘 {h.name} พักผ่อน | พลังงาน {h.u_energy:.0f}/2000")
 
-        # Get terrain elevation at human's current (integer) grid position
+        # ── Physics update (elevation, energy) ─────────────────────
         current_grid_r, current_grid_c = h.pos[0], h.pos[1]
         biome_id = sim.terrain.template[current_grid_r][current_grid_c]
         terrain_elevation_m = BIOME_ELEVATION_M.get(biome_id, 0.0)
-
-        # Update human physics (position, velocity, acceleration)
         h.body.physics_step(terrain_elevation_m)
-
-        # Update h.pos (integer grid) from body.position (float) for compatibility with other parts of the sim
         h.pos = [int(h.body.position[0]), int(h.body.position[1])]
 
-        # Physics calculations for energy, warmth, etc.
         h_px = sim.wp.human_daily_physics(
             h.mass, h.height, h.sex,
-            1.0 if h.sleeping else 1.4, # activity level
+            1.0 if h.sleeping else 1.4,
             sim.weather.global_temperature,
-            terrain_elevation_m, # Pass actual elevation in meters
+            terrain_elevation_m,
         )
         warmth = sim.fs.human_warmth_effect(h.pos, h.mass, sim.weather.global_temperature)
-        h.u_energy = max(0, h.u_energy + h_px["du_kj"]
-                         + warmth["heat_gained_kj"] - warmth["cold_penalty_kj"])
+        h.u_energy = max(0, h.u_energy + h_px["du_kj"] + warmth["heat_gained_kj"] - warmth["cold_penalty_kj"])
         h.body.u_energy = h.u_energy
         if warmth["near_fire"]:
             h.body.hormone.cortisol = max(5, h.body.hormone.cortisol-2)
@@ -624,9 +630,22 @@ def _step_world():
         for ev in body_events:
             _log(ev)
 
-        # ── Memory update — บันทึกสิ่งที่เห็น/ทำ/รู้สึก ────────────────
-        # Spatial memory
-        for vo in h.visible[:5]:   # จำแค่ 5 อย่างแรกที่เห็น
+        # ── Send pain/pleasure from body to brain ──────────────────
+        if h.body.health < 50:
+            h.brain.receive_pain("injury", (50 - h.body.health) / 100)
+        if h.body.u_energy < 500:
+            h.brain.receive_pain("hunger", (500 - h.body.u_energy) / 500)
+        if h.brain.drives.cold > 60:
+            h.brain.receive_pain("cold", (h.brain.drives.cold - 60) / 80)
+        if h.brain.drives.tired > 90 and not h.sleeping:
+            h.brain.receive_pain("tired", 0.3)
+        if h.brain.drives.hunger < 30:
+            h.brain.receive_pleasure("food", 0.5)
+        if sim.fs.nearby_fire(h.pos, radius=3) is not None:
+            h.brain.receive_pleasure("warmth", 0.3)
+
+        # ── Memory update ───────────────────────────────────────────
+        for vo in h.visible[:5]:
             if vo.kind == "food"  and vo.distance <= 3:
                 h.ltm.remember_place("food_rich", vo.pos, sim.day)
             elif vo.kind == "water":
@@ -636,12 +655,8 @@ def _step_world():
             elif vo.kind == "animal_pred" and vo.distance <= 5:
                 h.ltm.remember_place("danger", vo.pos, sim.day)
 
-        # Episodic memory — บันทึกทุก action พร้อม outcome
         last_outcome = h.brain.memory.episodes[-1].outcome if h.brain.memory.episodes else 0
-        context_str  = "+".join(
-            [v.kind for v in h.visible[:3]] +
-            [s.kind for s in h.sounds[:2]]
-        ) or "normal"
+        context_str  = "+".join([v.kind for v in h.visible[:3]] + [s.kind for s in h.sounds[:2]]) or "normal"
         h.ltm.store_episode(
             day=sim.day, hour=hour, pos=h.pos[:],
             action=action, outcome=last_outcome,
@@ -650,7 +665,6 @@ def _step_world():
             importance=min(1.0, abs(last_outcome) + 0.2),
         )
 
-        # Semantic learning
         if action == "start_fire" and last_outcome > 0:
             h.ltm.learn_fact("fire=warm", 1.0)
         if action == "eat_cooked" and last_outcome > 0.5:
@@ -658,26 +672,8 @@ def _step_world():
         if "sees_predator" in perc and perc["sees_predator"]:
             h.ltm.learn_fact("predator=danger", 1.0)
 
-        # Memory decay ทุก 10 วัน
         if sim.day % 10 == 0:
             h.ltm.decay(sim.day)
-
-        # ── Pain จาก body state จริง → ส่งไป brain ──────────────────
-        # ร่างกายหิวมาก → brain รู้สึกเจ็บจริง
-        if h.brain.drives.hunger >= 85:
-            h.brain.receive_pain("hunger", (h.brain.drives.hunger - 85) / 50)
-        # หนาวมาก → brain รู้สึกเจ็บ
-        if h.brain.drives.cold >= 60:
-            h.brain.receive_pain("cold", (h.brain.drives.cold - 60) / 80)
-        # กลัวมาก (Carnivore ใกล้) → รู้สึกเจ็บ
-        if h.brain.drives.fear >= 50:
-            h.brain.receive_pain("injury", (h.brain.drives.fear - 50) / 100)
-        # สุขภาพต่ำ → pain ต่อเนื่อง
-        if h.body.health < 50:
-            h.brain.receive_pain("injury", (50 - h.body.health) / 100)
-        # ง่วงมาก แต่ยังไม่นอน → เจ็บ
-        if h.brain.drives.tired >= 90 and not h.sleeping:
-            h.brain.receive_pain("tired", 0.3)
 
         # ตื่นนอน
         if h.sleeping and 6 <= hour < 21 and h.brain.drives.tired < 30:
@@ -706,14 +702,13 @@ def _step_world():
         _log(ev)
 
     # ── Wildlife — Pure behavior ──────────────────────────────────────
-    new_animals = []   # ลูกที่เกิดใหม่
+    new_animals = []
     dead_animals= []
 
     for a in list(sim.animals):
         if not a.alive:
             continue
 
-        # 1. Update drives + age + pregnancy
         events = a.update(hour, sim.terrain, sim.weather.global_temperature)
         for ev_type, ev_data in events:
             if ev_type == "birth":
@@ -726,37 +721,30 @@ def _step_world():
         if not a.alive:
             continue
 
-        # 2. Move อย่างชาญฉลาด
         a.move_smart(sim.terrain, SIZE)
 
-        # 3. Eat/Drink ตาม drive
         if a.a_type == "Herbivore" and not a.sleeping:
             if a.drives.hunger > 40:
                 a.eat_vegetation(sim.terrain)
             if a.drives.thirst > 50:
                 a.drink_water(sim.terrain)
 
-        # 4. Carnivore ล่า Herbivore ที่อยู่ใกล้
         if a.a_type == "Carnivore" and not a.sleeping and a.drives.hunger > 50:
             for prey in sim.animals:
                 if (prey.alive and not prey.sleeping
                         and prey.a_type == "Herbivore"
                         and abs(prey.pos[0]-a.pos[0]) + abs(prey.pos[1]-a.pos[1]) <= 1):
-                    # ล่าสำเร็จ
                     a.energy = min(1000, a.energy + a.energy_gain)
                     a.drives.hunger = max(0, a.drives.hunger - 60)
                     prey.health -= 80
                     if prey.health <= 0:
                         prey.alive = False
                         _log(f"🩸 {a.species} ล่า {prey.species} สำเร็จ")
-                    # prey จำตำแหน่งอันตราย
                     prey.drives.fear = min(100, prey.drives.fear + 50)
                     prey.known_danger_pos.append(a.pos[:])
-                    # predator จำตำแหน่งอาหาร
                     a.known_food_pos.append(prey.pos[:])
                     break
 
-        # 5. สืบพันธุ์ — หาคู่ที่อยู่ใกล้
         if a.drives.libido > 70 and not a.sleeping and not a.pregnant:
             for other in sim.animals:
                 if (other.alive and other.species == a.species
@@ -766,44 +754,37 @@ def _step_world():
                         _log(f"💕 {a.species} สืบพันธุ์ (Gen{a.generation})")
                     break
 
-    # ── เพิ่มลูกใหม่ + ลบตายแล้ว ─────────────────────────────────────
     sim.animals = [a for a in sim.animals if a.alive]
     sim.animals.extend(new_animals)
 
-    # cap จำนวนสัตว์ป่าไม่ให้เกิน (ป้องกัน memory blow)
     MAX_ANIMALS = 60
     if len(sim.animals) > MAX_ANIMALS:
-        # ลบสัตว์ที่อายุมากที่สุดออกก่อน
         sim.animals.sort(key=lambda x: x.age, reverse=True)
         removed = sim.animals[MAX_ANIMALS:]
         sim.animals = sim.animals[:MAX_ANIMALS]
         for r in removed:
             _log(f"🌿 {r.species} (Gen{r.generation}) ล้นพื้นที่")
 
-    # อัปเดต fauna counts ให้ตรงกับ animals list จริง
     sim.fauna.rabbit_pop = sum(1 for a in sim.animals if a.species=="กระต่ายป่า")
     sim.fauna.deer_pop   = sum(1 for a in sim.animals if a.species=="กวางเรนเดียร์")
     sim.fauna.tiger_pop  = sum(1 for a in sim.animals if a.species=="เสือเขี้ยวดาบ")
     sim.fauna.eagle_pop  = sum(1 for a in sim.animals if a.icon=="🦅")
 
-    # ── Spatial index rebuild (เร็วมากด้วย clear+insert) ────────────
+    # ── Rebuild spatial grid ───────────────────────────────────
     sim._spatial.clear()
     for a in sim.animals:
         sim._spatial.insert(a, a.pos)
     for h in sim.humans:
         sim._spatial.insert(h, h.pos)
 
-    # ── Invalidate cache ────────────────────────────────────────────
     sim.invalidate()
 
-    # ── History records ───────────────────────────────────────────────
     sim.pop_history.append(sim.fauna.rabbit_pop)
     sim.human_pop_history.append(sim.humansys.human_pop)
     sim.biomass_history.append(sim.plants.global_biomass)
     if len(sim.history) > 500:
         sim.history = sim.history[-500:]
 
-    # ── Database persistence (optional) ────────────────────────────
     try:
         record_timeseries(
             sim.day, sim.fauna,
@@ -838,7 +819,6 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
     if action == "sleep":
         h.sleeping = True
         h.brain.drives.relieve("tired", 12)
-        # pleasure ตามระดับที่ต้องการ — ยิ่งง่วงมาก ยิ่งสุขเมื่อได้นอน
         tired_level = h.brain.drives.tired / 100
         h.brain.receive_pleasure("rest", 0.3 + tired_level * 0.7)
 
@@ -860,7 +840,7 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                         ate = True
                     break
         if not ate and info_now["food_level"] > 10:
-            eaten = sim.plants.consume_at(h.pos[0], h.pos[1], 15)  # ✅ grid consume
+            eaten = sim.plants.consume_at(h.pos[0], h.pos[1], 15)
             if eaten > 0:
                 h.u_energy = min(2000, h.u_energy + eaten * 10)
                 h.brain.drives.relieve("hunger", eaten * 1.5)
@@ -874,11 +854,10 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                     r2=max(0,min(SIZE-1,h.pos[0]+dr)); c2=max(0,min(SIZE-1,h.pos[1]+dc))
                     fl=sim.terrain.vegetation[r2][c2]
                     if fl>best_food: best_food,best=fl,[r2,c2]
-            # Calculate direction vector towards best food
             direction = np.array([float(best[0]) - h.body.position[0], float(best[1]) - h.body.position[1], 0.0])
-            if np.linalg.norm(direction) > 0.1: # Avoid division by zero
+            if np.linalg.norm(direction) > 0.1:
                 direction = direction / np.linalg.norm(direction)
-            h.apply_movement_impulse(direction, speed=1.0) # Apply impulse towards food
+            h.apply_movement_impulse(direction, speed=1.0)
 
     elif action=="eat_cooked" and has_cooked and not h.sleeping:
         food = sim.cooked_foods.pop(0)
@@ -896,7 +875,6 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                 for dc in range(-8,9):
                     r2=max(0,min(SIZE-1,h.pos[0]+dr)); c2=max(0,min(SIZE-1,h.pos[1]+dc))
                     if sim.terrain.template[r2][c2] in [0,1]:
-                        # Calculate direction vector towards water
                         direction = np.array([float(r2) - h.body.position[0], float(c2) - h.body.position[1], 0.0])
                         if np.linalg.norm(direction) > 0.1:
                             direction = direction / np.linalg.norm(direction)
@@ -986,21 +964,18 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
                 target = mem.pos if mem else h.pos
         else:
             target = h.pos
-        # Calculate direction vector towards target
         direction = np.array([float(target[0]) - h.body.position[0], float(target[1]) - h.body.position[1], 0.0])
         if np.linalg.norm(direction) > 0.1:
             direction = direction / np.linalg.norm(direction)
         h.apply_movement_impulse(direction, speed=1.0)
 
     elif action=="flee" and not h.sleeping:
-        # Flee by applying a random impulse
         flee_direction = np.array([random.choice([-1.0, 1.0]), random.choice([-1.0, 1.0]), 0.0])
         h.apply_movement_impulse(flee_direction, speed=2.0)
         h.brain.drives.relieve("fear",10)
 
     elif action in ("explore","rest") and not h.sleeping:
         if action=="explore":
-            # Explore by applying a random impulse
             explore_direction = np.array([random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0), 0.0])
             if np.linalg.norm(explore_direction) > 0.1:
                 explore_direction = explore_direction / np.linalg.norm(explore_direction)
@@ -1009,7 +984,6 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
         else:
             h.brain.drives.relieve("tired",5)
 
-    # ภัยธรรมชาติ
     if dis_fx["human_injury"]>0 and random.random()<0.5:
         h.health=max(0,h.health-dis_fx["human_injury"])
         h.body.health=h.health
@@ -1023,13 +997,11 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
 
 
 def _log(msg: str, event_type: str = "general"):
-    hour = datetime.now(TZ_THAI).hour
+    hour = sim.hour   # ใช้ hour ภายใน
     minute = datetime.now(TZ_THAI).minute
     second = datetime.now(TZ_THAI).second
-    # Format: [Day 123 | 14:30:45] 💬 Event message
     text = f"[Day {sim.day} | {hour:02d}:{minute:02d}:{second:02d}] {msg}"
     sim.history.append(text)
-    # บันทึกลง DB buffer
     event_buffer.add(sim.day, msg, event_type, sim.hour)
 
 
@@ -1075,11 +1047,9 @@ def _restore_from_snapshot(snapshot: dict):
             sim.fauna.deer_pop       = s.get("deer", 50)
             sim.fauna.tiger_pop      = s.get("tiger", 5)
 
-            # restore humans จาก pickle ถ้ามี
             if snapshot.get("humans"):
                 sim.humans = snapshot["humans"]
             else:
-                # restore LTM จาก DB
                 for h in sim.humans:
                     load_human_memory(h.name, h.ltm)
 
@@ -1093,17 +1063,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connections.add(websocket)
     try:
-        # ส่ง snapshot แรกทันที
         await websocket.send_text(json.dumps(sim.get_snapshot()))
         while True:
-            # รอ message จาก client (ping หรือ command)
             try:
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=2.5)
                 msg  = json.loads(data)
                 _handle_command(msg)
             except asyncio.TimeoutError:
                 pass
-            # ส่ง snapshot ทุก 2.5 วินาที
             await websocket.send_text(json.dumps(sim.get_snapshot()))
     except WebSocketDisconnect:
         connections.discard(websocket)
@@ -1115,40 +1082,31 @@ async def websocket_endpoint(websocket: WebSocket):
 def _handle_command(msg: dict):
     cmd = msg.get("cmd")
     with sim.lock:
-        # Simulation now runs automatically by default.
-        # Start/Pause/Step commands are deprecated.
         if cmd == "reset":
             sim.__init__()
-            sim.running = True  # Ensure it stays running after reset
+            sim.running = True
+            sim.game_over = False
+            sim.dead.clear()
 
 
-# REST APIs
 @app.get("/api/state")
 def get_state():
     snap = sim.get_snapshot()
     if snap is None:
-        # force rebuild
         sim._snapshot_dirty = True
         return sim.get_snapshot()
     return snap
 
 @app.get("/api/state/delta")
 def get_state_delta(last_day: int = -1):
-    """
-    Delta endpoint — ส่งเฉพาะสิ่งที่เปลี่ยน
-    Browser ส่ง last_day ที่รู้อยู่ ถ้า day เปลี่ยนส่ง full update
-    ถ้าไม่เปลี่ยนส่งแค่ entities (humans+animals) ที่ขยับ
-    """
     snap = sim.get_snapshot()
     if snap is None:
         return {"type": "full", "data": {}}
     current_day = snap["day"]
 
     if last_day == -1 or last_day != current_day:
-        # วันเปลี่ยน → ส่ง full snapshot
         return {"type": "full", "data": snap}
 
-    # วันเดิม → ส่งแค่ entities + stats (ไม่ส่ง map)
     return {
         "type": "partial",
         "data": {
@@ -1159,7 +1117,11 @@ def get_state_delta(last_day: int = -1):
             "humans":   snap["humans"],
             "animals":  snap["animals"],
             "fauna":    snap["fauna"],
-            "history":  snap["history"][-5:],  # แค่ 5 event ล่าสุด
+            "history":  snap["history"][-5:],
+            "dialogue": snap.get("dialogue", []),
+            "fire_spots": snap.get("fire_spots", []),
+            "disasters": snap.get("disasters", []),
+            "atmosphere": snap.get("atmosphere", {}),
         }
     }
 
@@ -1203,3 +1165,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def index():
     return FileResponse("static/index.html")
+```
+
+---
