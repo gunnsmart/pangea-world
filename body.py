@@ -57,7 +57,9 @@ class Body:
     ร่างกายของมนุษย์คนหนึ่ง — เรียก .step_day() ทุกวัน
     """
 
-    def __init__(self, name: str, sex: str, mass: float, height: float):
+    def __init__(self, name: str, sex: str, mass: float, height: float, time_scale: float = 1.0):
+    ...
+        self.time_scale = time_scale
         self.name   = name
         self.sex    = sex      # "M" หรือ "F"
         self.mass   = mass     # kg
