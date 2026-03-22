@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🧬 Pangea Simulation</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <div class="sidebar">
+            <div class="logo">🧬 PANGEA</div>
+            <div class="stats-panel" id="stats-panel">
+                <div class="stat">Day: <span id="day">0</span></div>
+                <div class="stat">Temp: <span id="temp">--</span>°C</div>
+                <div class="stat">Biomass: <span id="biomass">--</span></div>
+            </div>
+            <div class="humans-panel" id="humans-panel"></div>
+            <div class="log-panel" id="log-panel"></div>
+        </div>
+        <div class="map-container">
+            <canvas id="map-canvas"></canvas>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
