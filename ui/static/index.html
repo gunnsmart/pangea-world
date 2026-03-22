@@ -12,8 +12,13 @@
             <div class="logo">🧬 PANGEA</div>
             <div class="stats-panel" id="stats-panel">
                 <div class="stat">Day: <span id="day">0</span></div>
+                <div class="stat">Time: <span id="time">12:00</span></div>
                 <div class="stat">Temp: <span id="temp">--</span>°C</div>
+                <div class="stat">Weather: <span id="weather">--</span></div>
                 <div class="stat">Biomass: <span id="biomass">--</span></div>
+                <div class="stat">Rabbits: <span id="rabbit">--</span></div>
+                <div class="stat">Deer: <span id="deer">--</span></div>
+                <div class="stat">Tigers: <span id="tiger">--</span></div>
             </div>
             <div class="humans-panel" id="humans-panel"></div>
             <div class="log-panel" id="log-panel"></div>
@@ -21,6 +26,10 @@
         <div class="map-container">
             <canvas id="map-canvas"></canvas>
         </div>
+    </div>
+    <div class="controls">
+        <button id="btn-pause">⏸ Pause</button>
+        <button id="btn-reset">↺ Reset</button>
     </div>
     <script src="/static/app.js"></script>
 </body>
