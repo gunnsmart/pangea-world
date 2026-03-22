@@ -149,7 +149,6 @@ class TerrainMap:
         return BIOME_COLOR.get(self.template[r][c], (100,100,100))
 
     def get_elevation(self, biome_id: int) -> float:
-        # rough elevation in meters
         el = {DEEP_WATER:0, SHALLOW:0.5, BEACH:1, GRASSLAND:2,
               TROPICAL:2, FOREST:3, MOUNTAIN:5, PEAK:10}
         return el.get(biome_id, 1)
