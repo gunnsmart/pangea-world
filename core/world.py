@@ -1,7 +1,7 @@
-# core/world.py
 import threading
 import time
 import numpy as np
+import random
 from typing import Callable, List, Dict, Any, Set
 from utils.config import MAP_SIZE, SIM_STEP_INTERVAL, MAX_CATCHUP
 from models.terrain import TerrainMap
@@ -111,11 +111,10 @@ class World:
                         h.brain.receive_pain("disease", 0.5)
                         self.event_bus.emit("log", f"🦠 {h.name} ติดโรค!")
 
-        # Daily human system (pregnancy, etc.)
         hunted = self.humansys.step_day(self.plants.global_biomass, self.fauna.deer_pop)
         self.fauna.deer_pop = max(0, self.fauna.deer_pop - hunted)
 
-        # Save snapshot and timeseries every day
+        # Save snapshot and timeseries
         try:
             from persistence.database import save_snapshot, record_timeseries
             state_dict = {
@@ -150,14 +149,27 @@ class World:
             perception = h.perceive(self, partner)
             action = h.decide(perception)
             h.current_action = action
+
+            # Record drives before action to compute outcome
+            old_hunger = h.brain.drives.hunger
+            old_tired = h.brain.drives.tired
+            old_cold = h.brain.drives.cold
+
             h.act(action, self, partner)   # execute action
 
-            # Update physics (position)
+            # Compute outcome: improvement in drives (negative change is good)
+            outcome = (old_hunger - h.brain.drives.hunger) / 100 \
+                      + (old_tired - h.brain.drives.tired) / 100 \
+                      + (old_cold - h.brain.drives.cold) / 100
+            outcome = max(-1, min(1, outcome))
+            h.brain.learn(action, outcome)
+
+            # Physics
             biome = self.terrain.template[int(h.pos[0])][int(h.pos[1])]
             elev = self.terrain.get_elevation(biome)
             h.update_physics(elev)
 
-            # Body step (health, energy, hormones)
+            # Body step
             body_events = h.body.step_day(
                 calories_in=800 if h.brain.drives.hunger < 60 else 200,
                 is_active=not h.sleeping,
@@ -167,7 +179,7 @@ class World:
             for ev in body_events:
                 self.event_bus.emit("log", ev)
 
-            # Pain/pleasure signals from body
+            # Pain/pleasure signals
             if h.body.health < 50:
                 h.brain.receive_pain("injury", (50 - h.body.health)/100)
             if h.body.u_energy < 500:
@@ -181,9 +193,7 @@ class World:
             if self.fires.nearby_fire(h.pos) is not None:
                 h.brain.receive_pleasure("warmth", 0.3)
 
-            # Memory: episodic
-            # Use last_pain as outcome (negative if pain, positive if pleasure)
-            outcome = -h.brain.last_pain  # roughly
+            # Episodic memory
             context_str = "+".join([v.kind for v in h.visible[:3]] + [s.kind for s in h.sounds[:2]]) or "normal"
             h.ltm.store_episode(
                 day=self.day, hour=self.hour, pos=[int(h.pos[0]), int(h.pos[1])],
@@ -212,11 +222,10 @@ class World:
             if perception.get("sees_predator"):
                 h.ltm.learn_fact("predator=danger", 1.0)
 
-            # Decay memory occasionally
             if self.day % 10 == 0:
                 h.ltm.decay(self.day)
 
-            # Wake up if rested enough
+            # Wake up
             if h.sleeping and 6 <= self.hour < 21 and h.brain.drives.tired < 30:
                 h.sleeping = False
                 h.brain.receive_pleasure("rest", 0.5)
@@ -269,15 +278,12 @@ class World:
                                 self.event_bus.emit("log", f"💕 {a.species} สืบพันธุ์ (Gen{a.generation})")
                                 break
 
-        # Apply animal changes
         self.animals = [a for a in self.animals if a.alive and a not in dead_animals] + new_animals
-        # Limit animal count
         MAX_ANIMALS = 60
         if len(self.animals) > MAX_ANIMALS:
             self.animals.sort(key=lambda x: x.age, reverse=True)
             self.animals = self.animals[:MAX_ANIMALS]
 
-        # Sync fauna counts
         self.fauna.rabbit_pop = sum(1 for a in self.animals if a.species == "กระต่ายป่า")
         self.fauna.deer_pop = sum(1 for a in self.animals if a.species == "กวางเรนเดียร์")
         self.fauna.tiger_pop = sum(1 for a in self.animals if a.species == "เสือเขี้ยวดาบ")
@@ -295,7 +301,6 @@ class World:
         for ev in rel_events:
             self.event_bus.emit("log", ev)
 
-        # Mark that map needs redraw
         self.invalidate()
 
     def _notify_listeners(self):
@@ -327,5 +332,4 @@ class World:
         }
 
     def invalidate(self):
-        # stub for caching (could be implemented)
         pass
