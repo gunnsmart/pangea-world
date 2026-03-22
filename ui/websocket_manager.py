@@ -1,4 +1,3 @@
-# ui/websocket_manager.py
 import asyncio
 import json
 from typing import Set
