@@ -232,7 +232,6 @@ class World:
                 self.event_bus.emit("log", f"🌅 {h.name} ตื่นนอน")
 
             # Death check
-            h.body.health = h.health
             if not h.body.alive and h.name not in self.dead:
                 self.dead.add(h.name)
                 self.event_bus.emit("log", f"💀 {h.name} เสียชีวิต (อายุ {h.body.age_years:.1f} ปี)")
