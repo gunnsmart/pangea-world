@@ -21,10 +21,10 @@ ws.onopen = () => {
 ws.onmessage = (e) => {
   if (paused) return;
 
-  const data = JSON.parse(e.data);
-  agents = data.agents || [];
-
-  render();
+let humans = data.humans || [];
+let animals = data.animals || [];
+allAgents = [...humans.map(h => ({ x: h.pos[0], y: h.pos[1], type: 'human', ...h })),
+              ...animals.map(a => ({ x: a.pos[0], y: a.pos[1], type: 'animal', ...a }))];
 };
 
 ws.onclose = () => status("🔴 Disconnected");
