@@ -1,6 +1,5 @@
 # server.py
 import asyncio
-import threading
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,22 +8,27 @@ from ui.websocket_manager import WebSocketManager
 
 app = FastAPI()
 world = World()
-ws_manager = WebSocketManager()
+ws_manager = WebSocketManager()   # will get loop later
 
-# Register world listener to broadcast updates
+# Register world listener
 def on_world_update(snapshot):
-    asyncio.create_task(ws_manager.broadcast(snapshot))
+    ws_manager.broadcast(snapshot)
+
 world.listeners.append(on_world_update)
 
 # Start simulation thread
 world.start()
+
+@app.on_event("startup")
+async def startup():
+    # Ensure ws_manager has the correct loop (already has from __init__)
+    pass
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
         while True:
-            # keep connection alive
             await websocket.receive_text()
     except:
         ws_manager.disconnect(websocket)
@@ -40,7 +44,7 @@ def command(cmd: str):
     elif cmd == "start":
         world.paused = False
     elif cmd == "reset":
-        # TODO: reinitialize world
+        # Implement reset (reinitialize world)
         pass
     return {"ok": True}
 
