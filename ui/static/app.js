@@ -1,10 +1,10 @@
-// ui/static/app.js
 let ws = null;
 let canvas = document.getElementById('map-canvas');
 let ctx = canvas.getContext('2d');
 let CELL_SIZE = 6;
 const MAP_SIZE = 100;
 let lastState = null;
+let logQueue = [];
 
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -15,9 +15,25 @@ function initWebSocket() {
         if (data.type === 'full') {
             lastState = data.data;
             renderFull(lastState);
+        } else if (data.type === 'log') {
+            addLog(data.data);
+        } else if (data.type === 'dialogue') {
+            // handle dialogue if needed
         }
     };
     ws.onclose = () => setTimeout(initWebSocket, 3000);
+}
+
+function addLog(msg) {
+    const container = document.getElementById('log-panel');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = msg;
+    container.appendChild(entry);
+    container.scrollTop = container.scrollHeight;
+    while (container.children.length > 100) {
+        container.removeChild(container.firstChild);
+    }
 }
 
 function renderFull(state) {
@@ -30,8 +46,12 @@ function renderFull(state) {
     document.getElementById('deer').innerText = state.fauna.deer;
     document.getElementById('tiger').innerText = state.fauna.tiger;
     renderHumans(state.humans);
-    renderLog(state.history);
     drawMap(state.map);
+    if (state.history && state.history.length) {
+        const container = document.getElementById('log-panel');
+        container.innerHTML = '';
+        state.history.slice(-30).forEach(msg => addLog(msg));
+    }
 }
 
 function renderHumans(humans) {
@@ -50,13 +70,6 @@ function renderHumans(humans) {
             ${h.last_speech ? `<div style="margin-top:6px;font-style:italic;">💬 "${h.last_speech}"</div>` : ''}
         </div>
     `).join('');
-}
-
-function renderLog(history) {
-    const container = document.getElementById('log-panel');
-    if (!history) return;
-    container.innerHTML = history.slice(-30).map(entry => `<div class="log-entry">${entry}</div>`).join('');
-    container.scrollTop = container.scrollHeight;
 }
 
 function drawMap(mapData) {
