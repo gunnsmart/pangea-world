@@ -1,7 +1,7 @@
 # systems/physics.py
 import math
 from utils.config import SOLAR_CONSTANT, ATP_PER_GLUCOSE_AEROBIC, ATP_PER_GLUCOSE_ANAEROBIC
-from utils.config import GLUCOSE_ENERGY_KJ, ATP_ENERGY_KJ, CO2_PER_GLUCOSE, O2_PER_GLUCOSE
+from utils.config import GLUCOSE_ENERGY_KJ, ATP_ENERGY_KJ, CO2_PER_GLUCOSE
 
 class Thermodynamics:
     @staticmethod
@@ -117,6 +117,16 @@ class ChemistryEngine:
             "humus_formed": decomp * 0.1,
         }
 
+    @staticmethod
+    def fire_combustion(fuel_kg: float, o2_fraction: float = 0.21, humidity: float = 0.5) -> dict:
+        if humidity >= 0.7:
+            return {"heat_kj": 0, "co2_kg": 0, "ash_kg": 0, "ignited": False}
+        efficiency = (1 - humidity) * o2_fraction / 0.21
+        heat_kj = fuel_kg * 17000 * efficiency
+        co2_kg = fuel_kg * 1.47 * efficiency
+        ash_kg = fuel_kg * 0.05
+        return {"heat_kj": heat_kj, "co2_kg": co2_kg, "ash_kg": ash_kg, "ignited": heat_kj > 0}
+
 class PhysicsEngine:
     @staticmethod
     def oxygen_partial_pressure(elevation_m: float) -> float:
@@ -231,14 +241,3 @@ class WorldPhysics:
             "po2_kpa": round(po2, 2),
             "efficiency": round(atp["efficiency"], 3),
         }
-
-# Add missing fire_combustion method to ChemistryEngine
-def fire_combustion(self, fuel_kg: float, o2_fraction: float = 0.21, humidity: float = 0.5) -> dict:
-    if humidity >= 0.7:
-        return {"heat_kj": 0, "co2_kg": 0, "ash_kg": 0, "ignited": False}
-    efficiency = (1 - humidity) * o2_fraction / 0.21
-    heat_kj = fuel_kg * 17000 * efficiency
-    co2_kg = fuel_kg * 1.47 * efficiency
-    ash_kg = fuel_kg * 0.05
-    return {"heat_kj": heat_kj, "co2_kg": co2_kg, "ash_kg": ash_kg, "ignited": heat_kj > 0}
-ChemistryEngine.fire_combustion = fire_combustion
