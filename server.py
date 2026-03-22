@@ -32,6 +32,7 @@ from terrain import TerrainMap
 from relationship import Relationship
 from physics_engine import WorldPhysics
 from fire_system import FireSystem
+from database import save_snapshot, load_latest_snapshot, init_db, load_human_memory
 import random
 import numpy as np
 
@@ -374,6 +375,7 @@ def run_simulation():
     last_step_time = time.monotonic()
     accumulated    = 0.0             # เวลาที่สะสมค้างอยู่ (วินาที)
     MAX_CATCHUP    = 24              # catch-up สูงสุด 24 steps ต่อรอบ (= 1 วัน sim)
+    steps_since_save = 0             # นับเก็บ step ตั้งแต่ครั้งบันทึกครั้งล่าสุด
 
     while True:
         now     = time.monotonic()
@@ -393,6 +395,28 @@ def run_simulation():
                     with sim.lock:
                         for _ in range(steps_due):
                             _step_world()
+                            steps_since_save += 1
+                            
+                            # Auto-save every SAVE_INTERVAL_STEPS
+                            if steps_since_save >= SAVE_INTERVAL_STEPS:
+                                try:
+                                    snapshot = sim.get_snapshot()
+                                    state_dict = {
+                                        "day": sim.day,
+                                        "weather_day": sim.weather.day,
+                                        "temp": sim.weather.global_temperature,
+                                        "moisture": sim.weather.global_moisture,
+                                        "biomass": sim.plants.global_biomass,
+                                        "rabbit": sim.fauna.rabbit_pop,
+                                        "deer": sim.fauna.deer_pop,
+                                        "tiger": sim.fauna.tiger_pop,
+                                    }
+                                    save_snapshot(sim.day, state_dict, sim.humans)
+                                    _log(f"💾 Snapshot saved at Day {sim.day}")
+                                    steps_since_save = 0
+                                except Exception as e:
+                                    print(f"[SAVE ERROR] {e}")
+                            
                             if sim.game_over:
                                 break
                 except Exception as e:
@@ -1018,7 +1042,7 @@ app = FastAPI(title="Pangea Simulation")
 connections: Set[WebSocket] = set()
 
 
-SAVE_INTERVAL_STEPS = 20   # save ทุก 20 steps (~50 นาทีจริง)
+SAVE_INTERVAL_STEPS = 1   # save ทุก 1 step = ทุก 1 ชั่วโมง sim (ทุก 1 วินาทีจริง)
 
 @app.on_event("startup")
 async def startup():
