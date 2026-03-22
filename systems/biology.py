@@ -66,7 +66,6 @@ class HumanEcosystem:
         for _ in range(self.human_pop):
             if random.random() < death_rate:
                 deaths += 1
-        # simple death removal
         self.human_pop = max(0, self.human_pop - deaths)
         self.males = max(0, self.males - int(deaths * 0.5))
         self.females = max(0, self.females - int(deaths * 0.5))
