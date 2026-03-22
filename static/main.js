@@ -318,4 +318,4 @@ window.addEventListener('load', () => {
   fetchState();
 });
 
-setInterval(fetchState, 3000);
+setInterval(fetchState, 200);
