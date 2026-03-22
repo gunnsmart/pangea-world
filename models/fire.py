@@ -2,8 +2,55 @@
 import random
 import math
 from dataclasses import dataclass
+import copy
 from typing import List, Optional, Dict, Any
 from utils.config import FUEL_BURN_RATE, IGNITION_TEMP_C, FIRE_TEMP_C, COOKING_TEMP_C, MAILLARD_TEMP_C, WARMTH_RADIUS
+
+
+
+# ... (ส่วน Campfire และ FireSystem เหมือนเดิม) ...
+
+@dataclass
+class Food:
+    name: str
+    raw_kcal: float
+    cooked_kcal: float = 0.0
+    cooked: bool = False
+    protein_g: float = 0.0
+    carb_g: float = 0.0
+
+    def cook(self, fire_temp_c: float):
+        if self.cooked:
+            return False, f"🍖 {self.name} สุกแล้ว"
+        if fire_temp_c < 60:
+            return False, f"🥩 ไฟไม่ร้อนพอ ({fire_temp_c:.0f}°C < 60°C)"
+        self.cooked = True
+        base_bonus = 1.3
+        if fire_temp_c >= 140:
+            base_bonus = 1.5
+        self.cooked_kcal = self.raw_kcal * base_bonus
+        return True, f"✅ {self.name} สุกแล้ว (+{(base_bonus-1)*100:.0f}% kcal)"
+
+    @property
+    def kcal(self):
+        return self.cooked_kcal if self.cooked else self.raw_kcal * 0.7
+
+class FireSystem:
+    # ... (existing code) ...
+    def cook_food(self, food_name: str, fire: Campfire):
+        if not fire or not fire.active:
+            return None, "❌ ไม่มีไฟ"
+        food_types = {
+            "เนื้อกวาง": Food("เนื้อกวาง", 200),
+            "เนื้อกระต่าย": Food("เนื้อกระต่าย", 120),
+            "ปลา": Food("ปลา", 180),
+        }
+        template = food_types.get(food_name)
+        if not template:
+            return None, f"❌ ไม่รู้จัก '{food_name}'"
+        food = copy.copy(template)
+        success, msg = food.cook(fire.fire_temp_c)
+        return food if success else None, msg
 
 @dataclass
 class Campfire:
