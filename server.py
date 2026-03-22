@@ -110,7 +110,7 @@ class SpatialGrid:
 class SimState:
     def __init__(self):
         self.lock = threading.Lock()
-        self.running = False
+        self.running = True
         self.day = 0
         self.hour = 12
         self.history: list[str] = []
@@ -1091,13 +1091,11 @@ async def websocket_endpoint(websocket: WebSocket):
 def _handle_command(msg: dict):
     cmd = msg.get("cmd")
     with sim.lock:
-        if cmd == "start":   sim.running = True
-        elif cmd == "pause": sim.running = False
-        elif cmd == "step":
-            sim.running = False
-            _step_world()
-        elif cmd == "reset":
+        # Simulation now runs automatically by default.
+        # Start/Pause/Step commands are deprecated.
+        if cmd == "reset":
             sim.__init__()
+            sim.running = True  # Ensure it stays running after reset
 
 
 # REST APIs

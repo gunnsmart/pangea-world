@@ -108,10 +108,8 @@ function drawEntities(humans, animals) {
   }
 }
 
-function sendCmd(cmd) {
-  fetch(`/api/command/${cmd}`, { method: 'POST' })
-    .then(() => fetchState());
-}
+// Control buttons removed - simulation runs automatically
+// (sendCmd function removed)
 
 // ── Canvas Map ───────────────────────────────────────────────────────────
 function drawMap(mapData) {
