@@ -246,11 +246,45 @@ function updateEco(s) {
 }
 
 // ── Log ───────────────────────────────────────────────────────────────────
+// ── Optimized Log Update (for high-frequency updates) ──────────────────────
+let logCache = [];
 function updateLog(history) {
   const el = document.getElementById('log-list');
-  el.innerHTML = [...history].reverse().slice(0,50).map(e =>
-    `<div class="log-entry">${e}</div>`
-  ).join('');
+  if (!el) return;
+  
+  // Only update if history has changed significantly
+  const newEntries = history.slice(Math.max(0, logCache.length - 5));
+  if (newEntries.length === 0) return;
+  
+  // Use DocumentFragment for batch DOM updates (faster)
+  const fragment = document.createDocumentFragment();
+  const displayCount = Math.min(50, history.length);
+  const entriesToShow = [...history].reverse().slice(0, displayCount);
+  
+  for (const entry of entriesToShow) {
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    
+    // Parse emoji and time from log entry
+    const match = entry.match(/^\[(.*?)\]\s*(.*)$/);
+    if (match) {
+      const timeInfo = match[1];
+      const message = match[2];
+      div.innerHTML = `<span class="log-time">[${timeInfo}]</span> <span class="log-msg">${message}</span>`;
+    } else {
+      div.textContent = entry;
+    }
+    
+    fragment.appendChild(div);
+  }
+  
+  // Clear and append all at once
+  el.innerHTML = '';
+  el.appendChild(fragment);
+  
+  // Auto-scroll to bottom
+  el.scrollTop = el.scrollHeight;
+  logCache = history;
 }
 
 // ── Header ────────────────────────────────────────────────────────────────

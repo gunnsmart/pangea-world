@@ -212,9 +212,29 @@
   .human-action { font-size: 9px; color: var(--green); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* log */
-  #log-list { font-size: 10px; line-height: 1.6; }
-  .log-entry { padding: 2px 0; border-bottom: 1px solid var(--border); color: var(--dim); }
+  #log-list { font-size: 10px; line-height: 1.8; font-family: 'Space Mono', monospace; }
+  .log-entry { 
+    padding: 4px 6px; 
+    border-bottom: 1px solid var(--border); 
+    color: var(--dim);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    transition: background 0.2s;
+  }
+  .log-entry:hover { background: rgba(0,212,255,0.05); }
   .log-entry:last-child { color: var(--text); }
+  .log-time { 
+    color: var(--accent); 
+    flex-shrink: 0; 
+    font-weight: 600;
+    min-width: 80px;
+  }
+  .log-msg { 
+    flex: 1;
+    color: var(--text);
+    word-break: break-word;
+  }
 
   /* mini chart */
   #chart-canvas { width: 100%; height: 70px; }

@@ -53,15 +53,15 @@ BIOME_ELEVATION_M = {
 # ══════════════════════════════════════════════════════════════════════════════
 TZ_THAI = timezone(timedelta(hours=7))
 # ─# ── Time Scale ────────────────────────────────────────────────────────
-# 1 วันจริง = 2 วัน sim (เร็วกว่าเวลาโลกจริงครึ่งหนึ่ง)
-# 1 วัน sim = 24 ชั่วโมง sim → step ทุก 75 วินาที = 1 ชั่วโมง sim
-# ดังนั้น 1 วัน sim ใช้เวลาจริง 1,800 วินาที (30 นาที)
-SIM_STEP_INTERVAL = 75.0   # วินาทีจริงต่อ 1 ชั่วโมง sim (3600/48 = 75))
+# 1 วินาทีจริง = 1 ชั่วโมง sim
+# 1 วัน sim = 24 ชั่วโมง sim → step ทุก 1 วินาที = 1 ชั่วโมง sim
+# ดังนั้น 1 วัน sim ใช้เวลาจริง 24 วินาที
+SIM_STEP_INTERVAL = 1.0   # วินาทีจริงต่อ 1 ชั่วโมง sim
 
 # ── สรุป scale ──────────────────────────────────────────────────────────────
-# 75 วิ = 1 ชม sim
-# 1,800 วิ (30 นาที real) = 24 ชม sim = 1 วัน sim ✅
-# นั่งดู 30 นาที เห็น Adam/Eve ใช้ชีวิต 1 วันเต็ม
+# 1 วิ = 1 ชม sim
+# 24 วิ (real) = 24 ชม sim = 1 วัน sim ✅
+# นั่งดู 24 วินาที เห็น Adam/Eve ใช้ชีวิต 1 วันเต็ม
 
 class SpatialGrid:
     """
@@ -554,6 +554,16 @@ def _step_world():
         _execute_action(h, partner, action, perc, info_now, near_fire,
                         has_cooked, hour, dis_fx, SIZE)
 
+        # Log detailed action with context
+        if action not in ["rest", "sleep"]:
+            hunger_level = "หิวมาก" if h.brain.drives.hunger >= 85 else ("หิวปกติ" if h.brain.drives.hunger >= 50 else "อิ่ม")
+            temp_status = "หนาวสั่น" if sim.weather.global_temperature < 15 else ("ร้อน" if sim.weather.global_temperature > 35 else "ปกติ")
+            _log(f"✅ {h.name} {action} | {hunger_level} | อุณหภูมิ {sim.weather.global_temperature:.1f}°C ({temp_status})")
+        elif action == "sleep":
+            _log(f"😴 {h.name} เข้านอน (ความเหนื่อย {h.brain.drives.tired:.0f}%)")
+        elif action == "rest":
+            _log(f"🧘 {h.name} พักผ่อน | พลังงาน {h.u_energy:.0f}/2000")
+
         # Get terrain elevation at human's current (integer) grid position
         current_grid_r, current_grid_c = h.pos[0], h.pos[1]
         biome_id = sim.terrain.template[current_grid_r][current_grid_c]
@@ -989,7 +999,11 @@ def _execute_action(h, partner, action, perc, info_now, near_fire,
 
 
 def _log(msg: str, event_type: str = "general"):
-    text = f"Day {sim.day}: {msg}"
+    hour = datetime.now(TZ_THAI).hour
+    minute = datetime.now(TZ_THAI).minute
+    second = datetime.now(TZ_THAI).second
+    # Format: [Day 123 | 14:30:45] 💬 Event message
+    text = f"[Day {sim.day} | {hour:02d}:{minute:02d}:{second:02d}] {msg}"
     sim.history.append(text)
     # บันทึกลง DB buffer
     event_buffer.add(sim.day, msg, event_type, sim.hour)
