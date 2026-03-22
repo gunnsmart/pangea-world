@@ -2,577 +2,75 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>🧬 Pangea</title>
+<title>God Simulator</title>
+
 <style>
-  /* (CSS เดิมทั้งหมด保持不变) */
-  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sarabun:wght@300;400;600&display=swap');
+body {
+  margin: 0;
+  background: #020617;
+  color: #e5e7eb;
+  font-family: Arial;
+  overflow: hidden;
+}
 
-  :root {
-    --bg:       #0a0e14;
-    --panel:    #111720;
-    --border:   #1e2d3d;
-    --accent:   #00d4ff;
-    --green:    #39ff14;
-    --orange:   #ff6b2b;
-    --red:      #ff2d55;
-    --text:     #c8d8e8;
-    --dim:      #4a6080;
-    --gold:     #ffd700;
-  }
+#topbar {
+  height: 50px;
+  background: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px;
+}
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+#controls {
+  display: flex;
+  gap: 10px;
+}
 
-  html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-  }
+button {
+  background: #1f2937;
+  border: none;
+  color: white;
+  padding: 6px 10px;
+  cursor: pointer;
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Sarabun', sans-serif;
-    font-size: 13px;
-    display: grid;
-    grid-template-rows: 48px 1fr;
-    grid-template-columns: 1fr 300px;
-    gap: 1px;
-    background: var(--border);
-  }
+#world {
+  display: block;
+}
 
-  /* ── Header ── */
-  header {
-    grid-column: 1 / -1;
-    background: var(--panel);
-    display: flex;
-    align-items: center;
-    padding: 0 12px;
-    gap: 12px;
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-    overflow-x: auto;
-  }
-
-  .logo { font-family: 'Space Mono', monospace; color: var(--accent); font-size: 14px; white-space: nowrap; }
-  .clock { font-family: 'Space Mono', monospace; color: var(--gold); font-size: 11px; white-space: nowrap; }
-  .phase { font-size: 11px; color: var(--dim); white-space: nowrap; }
-
-  .controls { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  button {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 5px 10px;
-    cursor: pointer;
-    font-family: 'Space Mono', monospace;
-    font-size: 10px;
-    transition: all 0.15s;
-    border-radius: 3px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  button:hover  { border-color: var(--accent); color: var(--accent); }
-  button.active { border-color: var(--green);  color: var(--green); }
-  button.danger { border-color: var(--red);    color: var(--red); }
-
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--dim); transition: background 0.3s; flex-shrink: 0;
-  }
-  .status-dot.running { background: var(--green); box-shadow: 0 0 8px var(--green); }
-
-  /* ── Main area ── */
-  main {
-    background: var(--panel);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    position: relative;
-  }
-
-  #map-container {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-    min-height: 0;
-    overflow: auto;
-  }
-
-  #map-canvas {
-    image-rendering: pixelated;
-    border: 1px solid var(--border);
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
-  }
-
-  .map-legend {
-    padding: 6px 10px;
-    display: flex;
-    gap: 10px;
-    font-size: 10px;
-    color: var(--dim);
-    border-top: 1px solid var(--border);
-    flex-wrap: wrap;
-    overflow-y: auto;
-    max-height: 60px;
-  }
-
-  /* ── Right panel ── */
-  aside {
-    background: var(--panel);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    overflow-x: auto;
-  }
-  .tab {
-    flex: 1;
-    padding: 8px 6px;
-    text-align: center;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--dim);
-    transition: all 0.15s;
-    border-bottom: 2px solid transparent;
-    white-space: nowrap;
-    min-width: 50px;
-  }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-  .tab-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    display: none;
-    font-size: 12px;
-  }
-  .tab-content.active { display: block; }
-
-  /* scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  /* ── Widgets ── */
-  .section { margin-bottom: 12px; }
-  .section-title {
-    font-family: 'Space Mono', monospace;
-    font-size: 9px;
-    color: var(--accent);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .metric {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    padding: 6px 8px;
-    border-radius: 3px;
-    font-size: 11px;
-  }
-  .metric-label { font-size: 9px; color: var(--dim); }
-  .metric-value { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text); }
-
-  /* drive bar */
-  .drive-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
-  .drive-label { width: 50px; font-size: 10px; color: var(--dim); flex-shrink: 0; }
-  .drive-bar-wrap { flex: 1; background: var(--bg); height: 5px; border-radius: 3px; overflow: hidden; }
-  .drive-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
-  .drive-val { width: 25px; text-align: right; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--dim); flex-shrink: 0; }
-
-  /* human card */
-  .human-card {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 8px;
-    margin-bottom: 8px;
-    background: var(--bg);
-    font-size: 11px;
-  }
-  .human-header {
-    display: flex; justify-content: space-between;
-    margin-bottom: 6px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-  }
-  .human-name { color: var(--gold); }
-  .human-action { font-size: 9px; color: var(--green); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  /* log */
-  #log-list { font-size: 10px; line-height: 1.8; font-family: 'Space Mono', monospace; }
-  .log-entry { 
-    padding: 4px 6px; 
-    border-bottom: 1px solid var(--border); 
-    color: var(--dim);
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-    transition: background 0.2s;
-  }
-  .log-entry:hover { background: rgba(0,212,255,0.05); }
-  .log-entry:last-child { color: var(--text); }
-  .log-time { 
-    color: var(--accent); 
-    flex-shrink: 0; 
-    font-weight: 600;
-    min-width: 80px;
-  }
-  .log-msg { 
-    flex: 1;
-    color: var(--text);
-    word-break: break-word;
-  }
-
-  /* mini chart */
-  #chart-canvas { width: 100%; height: 70px; }
-
-  /* disaster alert */
-  .alert {
-    background: rgba(255,45,85,0.1);
-    border: 1px solid var(--red);
-    border-radius: 3px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
-    font-size: 10px;
-    color: var(--red);
-  }
-
-  /* game over */
-  #game-over-banner {
-    display: none;
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  #game-over-banner.show { display: flex; }
-  #game-over-banner h1 { font-size: 32px; color: var(--red); font-family: 'Space Mono', monospace; }
-  #game-over-banner p  { color: var(--dim); margin-top: 8px; font-size: 14px; }
-  #game-over-banner button { margin-top: 20px; padding: 10px 24px; font-size: 12px; }
-
-  .badge {
-    display: inline-block; padding: 2px 6px;
-    border-radius: 10px; font-size: 9px;
-    background: var(--border); color: var(--text);
-    margin-right: 2px;
-    margin-bottom: 2px;
-  }
-  .badge.green { background: rgba(57,255,20,0.15); color: var(--green); }
-  .badge.red   { background: rgba(255,45,85,0.15);  color: var(--red); }
-
-  .relationship-bar {
-    display: flex; gap: 4px; margin-bottom: 4px; align-items: center;
-  }
-  .rel-label { width: 60px; font-size: 10px; color: var(--dim); flex-shrink: 0; }
-  .rel-bar-wrap { flex: 1; background: var(--bg); height: 6px; border-radius: 3px; overflow: hidden; }
-  .rel-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
-
-  .skill-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10px; border-bottom: 1px solid var(--border); }
-  .skill-name { color: var(--dim); }
-  .skill-val  { font-family: 'Space Mono', monospace; color: var(--text); }
-
-  /* Dialogue panel */
-  #dialogue-panel { display: flex; flex-direction: column; gap: 4px; }
-  .dialogue-entry { padding: 4px 6px; background: var(--bg); border-left: 2px solid var(--accent); border-radius: 2px; font-size: 11px; line-height: 1.4; color: var(--text); }
-  .dialogue-entry strong { color: var(--gold); }
-
-  /* ══════════════════════════════════════════════════════════════════════════════
-     RESPONSIVE DESIGN (คงเดิม) 
-     ══════════════════════════════════════════════════════════════════════════════ */
-  /* ... (responsive media queries คงเดิม) ... */
-  @media (min-width: 768px) {
-    body {
-      grid-template-rows: 48px 1fr;
-      grid-template-columns: 1fr 320px;
-    }
-    header { padding: 0 16px; gap: 16px; }
-    button { padding: 5px 14px; font-size: 11px; }
-    .logo { font-size: 15px; }
-    .clock { font-size: 12px; }
-    .phase { font-size: 12px; }
-    .tab { font-size: 11px; padding: 8px 8px; }
-    .metric { font-size: 12px; }
-    .metric-label { font-size: 10px; }
-    .metric-value { font-size: 13px; }
-    .drive-row { gap: 6px; }
-    .drive-label { width: 55px; font-size: 11px; }
-    .drive-val { width: 28px; font-size: 10px; }
-    .human-card { font-size: 12px; }
-    .human-header { font-size: 12px; }
-    .human-action { font-size: 10px; }
-    .log-list { font-size: 11px; }
-    .log-entry { line-height: 1.8; }
-    .badge { font-size: 10px; }
-    .skill-row { font-size: 11px; }
-    .section { margin-bottom: 14px; }
-    .section-title { font-size: 10px; }
-    .rel-label { width: 65px; font-size: 11px; }
-    .tab-content { font-size: 13px; }
-    #chart-canvas { height: 80px; }
-  }
-
-  @media (max-width: 767px) {
-    body {
-      grid-template-rows: 48px 1fr 200px;
-      grid-template-columns: 1fr;
-    }
-    header { padding: 0 8px; gap: 8px; font-size: 12px; }
-    main { grid-column: 1 / -1; }
-    #map-container { padding: 4px; }
-    .map-legend { padding: 4px 8px; font-size: 9px; gap: 8px; max-height: 50px; }
-    aside { grid-column: 1 / -1; height: 200px; border-top: 1px solid var(--border); }
-    .tabs { flex: 0 0 auto; }
-    .tab { font-size: 11px; padding: 6px 4px; min-width: 40px; }
-    .tab-content { font-size: 11px; padding: 8px; }
-    button { padding: 4px 8px; font-size: 9px; }
-    .logo { font-size: 12px; }
-    .clock { font-size: 10px; }
-    .phase { font-size: 10px; }
-    .metric-grid { grid-template-columns: 1fr 1fr; gap: 3px; }
-    .metric { padding: 4px 6px; font-size: 10px; }
-    .metric-label { font-size: 8px; }
-    .metric-value { font-size: 11px; }
-    .drive-row { gap: 3px; margin-bottom: 3px; }
-    .drive-label { width: 45px; font-size: 9px; }
-    .drive-val { width: 20px; font-size: 8px; }
-    .human-card { padding: 6px; margin-bottom: 6px; font-size: 10px; }
-    .human-header { font-size: 10px; margin-bottom: 4px; }
-    .human-action { font-size: 8px; max-width: 80px; }
-    .badge { padding: 1px 4px; font-size: 8px; }
-    .relationship-bar { gap: 3px; margin-bottom: 3px; }
-    .rel-label { width: 50px; font-size: 9px; }
-    .section { margin-bottom: 8px; }
-    .section-title { font-size: 8px; margin-bottom: 4px; }
-    #log-list { font-size: 9px; line-height: 1.4; }
-    .log-entry { padding: 1px 0; }
-    #chart-canvas { height: 50px; }
-  }
-
-  @media (max-width: 479px) {
-    body {
-      grid-template-rows: 44px 1fr 180px;
-      grid-template-columns: 1fr;
-      gap: 0;
-    }
-    header { padding: 0 6px; gap: 4px; font-size: 11px; }
-    button { padding: 3px 6px; font-size: 8px; }
-    .logo { font-size: 11px; }
-    .clock { font-size: 9px; }
-    .phase { font-size: 9px; }
-    .controls { gap: 3px; }
-    .map-legend { padding: 2px 6px; font-size: 8px; gap: 6px; max-height: 40px; }
-    aside { height: 180px; }
-    .tab { font-size: 10px; padding: 5px 3px; min-width: 35px; }
-    .tab-content { font-size: 10px; padding: 6px; }
-    .metric-grid { grid-template-columns: 1fr; gap: 2px; }
-    .metric { padding: 3px 4px; font-size: 9px; }
-    .metric-label { font-size: 7px; }
-    .metric-value { font-size: 10px; }
-    .drive-row { gap: 2px; margin-bottom: 2px; }
-    .drive-label { width: 40px; font-size: 8px; }
-    .drive-bar-wrap { height: 4px; }
-    .drive-val { width: 18px; font-size: 7px; }
-    .human-card { padding: 4px; margin-bottom: 4px; font-size: 9px; }
-    .human-header { font-size: 9px; margin-bottom: 3px; }
-    .human-action { font-size: 7px; max-width: 70px; }
-    .badge { padding: 1px 3px; font-size: 7px; margin-right: 1px; margin-bottom: 1px; }
-    .relationship-bar { gap: 2px; margin-bottom: 2px; }
-    .rel-label { width: 45px; font-size: 8px; }
-    .section { margin-bottom: 6px; }
-    .section-title { font-size: 7px; margin-bottom: 3px; }
-    #log-list { font-size: 8px; line-height: 1.3; }
-    .log-entry { padding: 1px 0; }
-    #chart-canvas { height: 40px; }
-    .skill-row { font-size: 9px; padding: 2px 0; }
-  }
-
-  @media (max-width: 767px) and (orientation: landscape) {
-    body {
-      grid-template-rows: 44px 1fr;
-      grid-template-columns: 1fr 220px;
-    }
-    aside { height: auto; border-left: 1px solid var(--border); border-top: none; }
-    header { padding: 0 8px; gap: 6px; }
-    button { padding: 3px 8px; font-size: 9px; }
-    .logo { font-size: 12px; }
-    .clock { font-size: 10px; }
-    .map-legend { max-height: 40px; font-size: 8px; }
-    .tab { font-size: 9px; padding: 5px 3px; }
-    .tab-content { font-size: 10px; padding: 6px; }
-    .metric { font-size: 10px; padding: 4px 6px; }
-    .metric-label { font-size: 8px; }
-    .metric-value { font-size: 11px; }
-    .badge { font-size: 8px; padding: 1px 4px; }
-    #chart-canvas { height: 50px; }
-  }
-
-  @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
-    body { grid-template-rows: 48px 1fr; grid-template-columns: 1fr 280px; }
-    button { padding: 5px 12px; font-size: 10px; }
-    .metric { font-size: 11px; }
-    .badge { font-size: 9px; }
-  }
-
-  @media (min-width: 1025px) {
-    body { grid-template-rows: 48px 1fr; grid-template-columns: 1fr 350px; }
-    header { padding: 0 20px; gap: 20px; }
-    button { padding: 6px 16px; font-size: 12px; }
-    .logo { font-size: 16px; }
-    .clock { font-size: 13px; }
-    .metric-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
-    .metric { padding: 8px 10px; font-size: 13px; }
-    .metric-label { font-size: 11px; }
-    .metric-value { font-size: 14px; }
-    .badge { font-size: 11px; padding: 3px 8px; }
-    #chart-canvas { height: 100px; }
-  }
-
-  @media (max-width: 767px) {
-    input, button, select, textarea { font-size: 16px !important; }
-  }
+#info {
+  position: absolute;
+  right: 10px;
+  top: 60px;
+  width: 250px;
+  background: rgba(0,0,0,0.7);
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
 </style>
 </head>
+
 <body>
 
-<header>
-  <div class="logo">🧬 PANGEA</div>
-  <div class="status-dot" id="status-dot"></div>
-  <div class="clock" id="clock">--:--:--</div>
-  <div class="phase" id="phase">--</div>
-  <span class="badge" id="day-badge">Day 0</span>
-  <span class="badge" id="season-badge">--</span>
-  <div class="controls">
-    <!-- ปุ่มควบคุมจะถูกเพิ่มโดย JavaScript แต่ใส่ปุ่มเริ่มต้นไว้เพื่อให้ใช้งานได้ทันที -->
-    <button id="btn-start" onclick="sendCmd('start')">▶️ เริ่ม</button>
-    <button id="btn-pause" onclick="sendCmd('pause')">⏸️ หยุด</button>
-    <button onclick="sendCmd('reset')">⟳ รีเซ็ต</button>
-  </div>
-</header>
+<div id="topbar">
+  <div>🌍 God Simulator</div>
 
-<main>
-  <div id="map-container">
-    <canvas id="map-canvas" width="600" height="600"></canvas>
-  </div>
-  <div class="map-legend">
-    <span>⬜ มนุษย์</span>
-    <span>🟡 Herbivore</span>
-    <span>🔴 Carnivore</span>
-    <span>🔘 หลับ</span>
-    <span>🟠 ไฟ</span>
-    <span>🔵 น้ำ</span>
-    <span>🟢 ป่า</span>
-    <span>🟤 ภูเขา</span>
-  </div>
-  <div id="game-over-banner">
-    <h1>🌑 EXTINCTION</h1>
-    <p>Adam และ Eve สูญพันธุ์แล้ว</p>
-    <button class="danger" onclick="sendCmd('reset')">↺ เริ่มใหม่</button>
-  </div>
-</main>
-
-<aside>
-  <div class="tabs">
-    <div class="tab active" data-tab="stats">📊</div>
-    <div class="tab" data-tab="humans">🧑</div>
-    <div class="tab" data-tab="eco">🌿</div>
-    <div class="tab" data-tab="dialogue">💬</div>
-    <div class="tab" data-tab="log">📜</div>
+  <div id="controls">
+    <button onclick="togglePause()">⏯ Pause</button>
+    <button onclick="speedUp()">⚡ Speed+</button>
+    <button onclick="resetCamera()">🎯 Reset View</button>
   </div>
 
-  <!-- STATS -->
-  <div class="tab-content active" id="tab-stats">
-    <div class="section">
-      <div class="section-title">🌦 Environment</div>
-      <div class="metric-grid">
-        <div class="metric"><div class="metric-label">🌡 Temp</div><div class="metric-value" id="s-temp">--</div></div>
-        <div class="metric"><div class="metric-label">💧 Moisture</div><div class="metric-value" id="s-moisture">--</div></div>
-        <div class="metric"><div class="metric-label">☁️ Weather</div><div class="metric-value" id="s-weather" style="font-size:11px">--</div></div>
-        <div class="metric"><div class="metric-label">🌿 Biomass</div><div class="metric-value" id="s-biomass">--</div></div>
-      </div>
-    </div>
-    <div class="section" id="disaster-section"></div>
-    <div class="section">
-      <div class="section-title">🐾 Wildlife</div>
-      <div class="metric-grid">
-        <div class="metric"><div class="metric-label">🐰 Rabbits</div><div class="metric-value" id="s-rabbit">--</div></div>
-        <div class="metric"><div class="metric-label">🦌 Deer</div><div class="metric-value" id="s-deer">--</div></div>
-        <div class="metric"><div class="metric-label">🐯 Tigers</div><div class="metric-value" id="s-tiger">--</div></div>
-        <div class="metric"><div class="metric-label">🦅 Eagles</div><div class="metric-value" id="s-eagle">--</div></div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section-title">📈 Population</div>
-      <canvas id="chart-canvas"></canvas>
-    </div>
-  </div>
+  <div id="status">Connecting...</div>
+</div>
 
-  <!-- HUMANS -->
-  <div class="tab-content" id="tab-humans">
-    <div id="humans-container"></div>
-    <div class="section">
-      <div class="section-title">💑 Relationship</div>
-      <div id="rel-stage" style="text-align:center;font-size:16px;padding:6px 0">--</div>
-      <div class="relationship-bar">
-        <div class="rel-label">❤️ Bond</div>
-        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-bond" style="width:0%;background:#ff6b9d"></div></div>
-        <div class="drive-val" id="rel-bond-val">0</div>
-      </div>
-      <div class="relationship-bar">
-        <div class="rel-label">🤝 Trust</div>
-        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-trust" style="width:0%;background:#00d4ff"></div></div>
-        <div class="drive-val" id="rel-trust-val">0</div>
-      </div>
-      <div class="relationship-bar">
-        <div class="rel-label">⚔️ Conflict</div>
-        <div class="rel-bar-wrap"><div class="rel-bar" id="rel-conflict" style="width:0%;background:#ff2d55"></div></div>
-        <div class="drive-val" id="rel-conflict-val">0</div>
-      </div>
-    </div>
-  </div>
+<canvas id="world"></canvas>
+<div id="info">Click agent...</div>
 
-  <!-- ECO -->
-  <div class="tab-content" id="tab-eco">
-    <div class="section">
-      <div class="section-title">🌍 Atmosphere</div>
-      <div class="metric-grid" id="atmo-grid"></div>
-    </div>
-    <div class="section">
-      <div class="section-title">🔥 Active Fires</div>
-      <div id="fire-info" style="font-size:11px;color:var(--dim)">ไม่มีกองไฟ</div>
-    </div>
-  </div>
-
-  <!-- DIALOGUE -->
-  <div class="tab-content" id="tab-dialogue">
-    <div class="section">
-      <div class="section-title">💬 Speech & Language</div>
-      <div id="dialogue-panel" style="font-size:11px; max-height:100%; overflow-y:auto;"></div>
-    </div>
-  </div>
-
-  <!-- LOG -->
-  <div class="tab-content" id="tab-log">
-    <div id="log-list"></div>
-  </div>
-</aside>
-
-<script src="/static/main_responsive.js?v=1"></script>
+<script src="main.js"></script>
 </body>
-  </html>
+</html>
