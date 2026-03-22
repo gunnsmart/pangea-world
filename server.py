@@ -124,6 +124,7 @@ class SimState:
         self.pop_history: list[int] = []
         self.human_pop_history: list[int] = []
         self.biomass_history: list[float] = []
+        self.SIZE = self.terrain.size   # ปกติมีอยู่แล้ว
         # ── Cache layer ──────────────────────────────────────────
         self._map_cache      = None    # numpy array (SIZE,SIZE,3)
         self._map_dirty      = True    # ต้อง re-render ไหม
