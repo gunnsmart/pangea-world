@@ -37,6 +37,7 @@ class Relationship:
         self.day = 0
         self.memories: List[Memory] = []
         self._last_conflict_day = -999
+        self._milestone_recorded = set()  # เก็บ milestone ที่บันทึกแล้ว
 
     @property
     def stage(self) -> str:
@@ -84,11 +85,11 @@ class Relationship:
         for threshold, label in [(25,"🙂 คุ้นเคย"), (50,"😊 เพื่อนสนิท"),
                                   (75,"❤️ รักกัน"), (90,"💍 คู่ชีวิต")]:
             if self.bond >= threshold and self.trust >= threshold * 0.8:
-                key = f"milestone_{threshold}"
-                if not any(key in m.event for m in self.memories):
+                if threshold not in self._milestone_recorded:
+                    self._milestone_recorded.add(threshold)
                     msg = f"🎉 {self.name_a} & {self.name_b} ถึงขั้น '{label}'!"
                     events.append(msg)
-                    self.remember(key+": "+msg, +1.0)
+                    self.remember(msg, +1.0)
                     break
         return events
 
