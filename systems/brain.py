@@ -134,28 +134,32 @@ class DriveSystem:
         self.curious = 50.0
 
     def step(self, temp_c: float, hour: int, partner_dist: int, danger: bool) -> Dict[str, float]:
-        self.hunger = min(100, self.hunger + 4.0 * self.time_scale)
-        self.thirst = min(100, self.thirst + 5.0 * self.time_scale)
+        # ลดอัตราการเพิ่ม hunger, thirst, tired เล็กน้อย
+        self.hunger = min(100, self.hunger + 3.0 * self.time_scale)   # จาก 4.0
+        self.thirst = min(100, self.thirst + 4.0 * self.time_scale)   # จาก 5.0
         self.bladder = min(100, self.bladder + 5.0 * self.time_scale)
-        tired_inc = 4.0 if (6 <= hour < 21) else 6.0
+        tired_inc = 3.5 if (6 <= hour < 21) else 5.5                  # ลดลงเล็กน้อย
         self.tired = min(100, self.tired + tired_inc * self.time_scale)
-        self.bored = min(100, self.bored + 1.0 * self.time_scale)
-        self.curious = min(100, self.curious + 0.5 * self.time_scale)
+        self.bored = min(100, self.bored + 0.8 * self.time_scale)     # จาก 1.0
+        self.curious = min(100, self.curious + 0.4 * self.time_scale) # จาก 0.5
 
+        # ปรับอัตราการเพิ่ม cold ให้ช้าลง และลด cold เร็วขึ้น
         if temp_c < 20:
-            self.cold = min(100, self.cold + (20-temp_c)*0.5*self.time_scale)
+            # เพิ่ม cold 0.3 ต่อองศาที่ต่ำกว่า 20 ต่อชั่วโมง (เดิม 0.5)
+            self.cold = min(100, self.cold + (20 - temp_c) * 0.3 * self.time_scale)
         else:
-            self.cold = max(0, self.cold - 3.0*self.time_scale)
+            # ลด cold เร็วขึ้น 5 ต่อชั่วโมง (เดิม 3)
+            self.cold = max(0, self.cold - 5.0 * self.time_scale)
 
         if partner_dist > 10:
-            self.lonely = min(100, self.lonely + 2.0*self.time_scale)
+            self.lonely = min(100, self.lonely + 1.5 * self.time_scale)  # จาก 2.0
         else:
-            self.lonely = max(0, self.lonely - 1.0*self.time_scale)
+            self.lonely = max(0, self.lonely - 1.5 * self.time_scale)    # จาก 1.0
 
         if danger:
-            self.fear = min(100, self.fear + 30.0*self.time_scale)
+            self.fear = min(100, self.fear + 20.0 * self.time_scale)     # จาก 30
         else:
-            self.fear = max(0, self.fear - 5.0*self.time_scale)
+            self.fear = max(0, self.fear - 6.0 * self.time_scale)        # จาก 5
 
         return {
             "hunger": self.hunger/100,
