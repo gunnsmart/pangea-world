@@ -6,6 +6,9 @@ from systems.body import Body
 from systems.senses import VisionSystem, SoundSystem
 from systems.memory import LongTermMemory
 from systems.language import ProtoLanguage
+from materials import STONE, WOOD, FIBER, LEAF
+from item import create_item, Item
+from crafting import generate_item_name
 
 class HumanAI:
     def __init__(self, name: str, height: float, mass: float, partner_name: str):
@@ -18,7 +21,14 @@ class HumanAI:
         self.hearing = SoundSystem()
         self.ltm = LongTermMemory()
         self.lang = ProtoLanguage(name)
-        self.inventory: List[str] = []
+        # กำหนดไอเทมเริ่มต้น
+        base_items = [
+            create_item(STONE, volume=0.5, length=0.2, modifiers={"sharp": 8}),  # หินแหลม
+            create_item(WOOD, volume=1.0, length=1.0, modifiers={"flammable": 10}), # กิ่งไม้แห้ง
+            create_item(LEAF, volume=0.2, length=0.5),  # ใบไม้ใหญ่
+            create_item(FIBER, volume=0.3, length=0.8, modifiers={"sticky": 10})  # เถาวัลย์
+        ]
+        self.inventory = random.sample(base_items, 3)
         self.current_action = "idle"
         self.sleeping = False
         self.pos = np.array([50.0, 50.0, 0.0])
@@ -62,7 +72,7 @@ class HumanAI:
             "has_cooked_food": len(world.fires.cooked_foods) > 0,
             "biome_food": info["food_level"],
             "is_night": world.hour >= 21 or world.hour < 6,
-            "inventory": self.inventory,
+            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
             **vision_dict,
             **sound_dict,
         }
@@ -164,7 +174,13 @@ class HumanAI:
 
         # ========== START FIRE ==========
         elif action == "start_fire" and not self.sleeping:
-            if "หินเหล็กไฟ" in self.inventory and "กิ่งไม้แห้ง" in self.inventory:
+            # Check for flint and wood in inventory (old style check) or materials
+            has_flint = any(isinstance(i, str) and "หินเหล็กไฟ" in i for i in self.inventory) or \
+                        any(hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 7 and i.attrs.get("sharp", 0) > 5 for i in self.inventory)
+            has_wood = any(isinstance(i, str) and "กิ่งไม้แห้ง" in i for i in self.inventory) or \
+                       any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 7 for i in self.inventory)
+            
+            if has_flint and has_wood:
                 campfire = world.fires.start_fire([int(self.pos[0]), int(self.pos[1])], fuel_kg=3.0)
                 ok, msg = campfire.ignite(world.weather.global_moisture/100, True)
                 world.event_bus.emit("log", f"🔥 {self.name}: {msg}")
@@ -191,22 +207,58 @@ class HumanAI:
 
         # ========== GATHER ==========
         elif action == "gather" and not self.sleeping:
-            pool = ["กิ่งไม้แห้ง","ใบไม้ใหญ่","เถาวัลย์","หินคม"]
-            if info.get("has_herb"):
-                pool.append("หินเหล็กไฟ")
-            new_item = random.choice(pool)
-            if new_item not in self.inventory:
+            # สร้าง Item ตามประเภท terrain
+            terrain_info = world.terrain.get_info(int(self.pos[0]), int(self.pos[1]))
+            biome = terrain_info["biome_id"]
+            new_item = None
+            if biome in [2,3,4,5]:  # ทุ่งหญ้า, ป่า, ฯลฯ
+                new_item = create_item(LEAF, volume=0.2, length=0.5)
+            elif biome in [6,7]:  # ภูเขา
+                new_item = create_item(STONE, volume=0.3, length=0.1, modifiers={"sharp": random.randint(3,8)})
+            else:
+                # พื้นที่อื่นอาจได้กิ่งไม้
+                new_item = create_item(WOOD, volume=0.5, length=0.5, modifiers={"flammable": random.randint(5,10)})
+
+            if new_item:
                 self.inventory.append(new_item)
                 self.brain.receive_pleasure("discovery", 0.4)
-                world.event_bus.emit("log", f"🌿 {self.name} เก็บ {new_item}")
+                world.event_bus.emit("log", f"🌿 {self.name} เก็บ {new_item.material.template.name}")
 
         # ========== CRAFT ==========
         elif action == "craft" and not self.sleeping:
-            items, stats, inv = self.experiment()
-            if items and inv:
-                inv_name = inv.get("name", f"{items[0]}+{items[1]}")
-                self.brain.receive_pleasure("invention", 0.9)
-                world.event_bus.emit("log", f"💡 {self.name} สร้าง '{inv_name}'")
+            # เลือกไอเทมจาก inventory
+            item_a, item_b, binder = self.brain.select_items_for_craft(self.inventory)
+            if item_a and item_b:
+                new_item = self.brain.try_craft(item_a, item_b, binder)
+                if new_item:
+                    # ลบของเดิมที่ใช้ไป
+                    self.inventory.remove(item_a)
+                    self.inventory.remove(item_b)
+                    if binder:
+                        self.inventory.remove(binder)
+                    self.inventory.append(new_item)
+                    world.event_bus.emit("log", f"💡 {self.name} สร้าง '{new_item.name if hasattr(new_item,'name') else new_item.material.template.name}'!")
+                else:
+                    world.event_bus.emit("log", f"❌ {self.name} ลองคราฟต์ไม่สำเร็จ")
+
+        # ========== RUB ==========
+        elif action == "rub" and not self.sleeping:
+            # หาวัตถุสองชิ้นที่มี hardness > 5 (เช่น หิน)
+            stones = [i for i in self.inventory if hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 5]
+            if len(stones) >= 2:
+                stone_a, stone_b = stones[:2]
+                # คำนวณความร้อนจากแรงเสียดทาน
+                from systems.physics import friction_heat, can_ignite
+                heat = friction_heat(stone_a.material, stone_b.material, duration=1.0)  # 1 ชั่วโมง
+                if can_ignite(heat, stone_a.material) or can_ignite(heat, stone_b.material):
+                    # จุดไฟสำเร็จ
+                    fire = world.fires.start_fire(self.pos[:2].tolist(), fuel_kg=2.0)
+                    fire.ignite(world.weather.global_moisture/100, True)
+                    world.event_bus.emit("log", f"🔥 {self.name} จุดไฟสำเร็จด้วยการขัดสีหิน!")
+                    self.brain.receive_pleasure("warmth", 1.0)
+                else:
+                    world.event_bus.emit("log", f"🪨 {self.name} ขัดสีหินแต่ยังไม่เกิดไฟ")
+                    self.brain.receive_pain("failure", 0.1)
 
         # ========== MATE ==========
         elif action == "mate" and not self.sleeping:
@@ -270,9 +322,15 @@ class HumanAI:
             else:
                 self.brain.drives.relieve("tired", 5)
 
-    def apply_movement_impulse(self, direction: np.ndarray, speed: float = 1.0):
-        force = direction * speed * 5.0
-        self.body.acceleration += force
+    def apply_movement_impulse(self, direction, speed=1.0):
+        """ใช้แรงผลักให้เคลื่อนที่ (เพิ่มความเร็ว)"""
+        if hasattr(self.body, 'velocity'):
+            self.body.velocity[0] += direction[0] * speed
+            self.body.velocity[1] += direction[1] * speed
+        else:
+            # Fallback to acceleration if velocity is not present
+            force = direction * speed * 5.0
+            self.body.acceleration += force
 
     def update_physics(self, terrain_elevation: float):
         self.body.physics_step(terrain_elevation)
@@ -310,6 +368,6 @@ class HumanAI:
                 "lonely": self.brain.drives.lonely,
                 "bored": self.brain.drives.bored,
             },
-            "inventory": self.inventory,
+            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
             "last_speech": self.lang.last_utterance_str if hasattr(self.lang, 'last_utterance_str') else "",
         }

@@ -241,3 +241,21 @@ class WorldPhysics:
             "po2_kpa": round(po2, 2),
             "efficiency": round(atp["efficiency"], 3),
         }
+def friction_heat(material_a, material_b, duration=1.0):
+    """คำนวณความร้อน (จูล) จากการขัดสีระหว่างวัสดุสองชนิด"""
+    # สมมติค่าสัมประสิทธิ์แรงเสียดทาน 0.5, แรงกดจากมวล (สมมติ 1 kg), ความเร็ว 1 m/s
+    friction_coeff = 0.5
+    mass = material_a.attrs.get("mass", 1) + material_b.attrs.get("mass", 1)
+    force = mass * 9.81  # N
+    distance = 1.0 * duration  # m
+    work = friction_coeff * force * distance
+    heat = work * 0.9  # 90% กลายเป็นความร้อน
+    return heat
+
+def can_ignite(heat_joules, material):
+    """ตรวจสอบว่าความร้อนเพียงพอที่จะจุดติดไฟหรือไม่"""
+    mass_g = material.attrs.get("mass", 1) * 1000
+    # heat capacity ประมาณ 1 J/g°C
+    temp_rise = heat_joules / (mass_g * 1.0)
+    ignition_temp = material.attrs.get("ignition_temp", 300)
+    return temp_rise > ignition_temp

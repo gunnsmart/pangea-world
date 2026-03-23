@@ -3,11 +3,13 @@ import math
 import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Set, Optional
+from crafting import combine_items, generate_item_name
+from item import Item
 
 ACTIONS = [
     "eat_raw", "eat_cooked", "drink", "toilet", "sleep", "seek_food",
     "seek_water", "seek_partner", "seek_fire", "mate", "start_fire", "cook",
-    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach"
+    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach", "rub"
 ]
 
 DRIVE_TO_RELIEF = {
@@ -16,7 +18,7 @@ DRIVE_TO_RELIEF = {
     "bladder": ["toilet"],
     "tired": ["sleep", "rest"],
     "lonely": ["seek_partner", "mate"],
-    "cold": ["seek_fire", "start_fire", "tend_fire"],
+    "cold": ["seek_fire", "start_fire", "tend_fire", "rub"],
     "fear": ["flee", "seek_fire"],
     "bored": ["explore", "gather", "craft"],
     "curious": ["explore", "craft", "gather"],
@@ -200,6 +202,8 @@ class Brain:
         self.drives = DriveSystem(time_scale)
         self.emotion = Emotion()
         self.memory = EpisodicMemory()
+        self.craft_recipes = {}   # key: (material1_name, material2_name, binder_name) -> Item
+        self.craft_outcomes = {}  # key: (m1,m2,binder) -> efficiency
         self.current_action = "explore"
         self.current_context = ""
         self.last_pain = 0.0
@@ -293,7 +297,67 @@ class Brain:
                 return action
         return keys[-1]
 
+    def try_craft(self, item_a: Item, item_b: Item, binder: Item = None) -> Item:
+        """พยายามคราฟต์ ตรวจสอบความทรงจำก่อน ถ้าไม่มีให้ทดลอง"""
+        key = (item_a.material.template.name,
+               item_b.material.template.name,
+               binder.material.template.name if binder else None)
+        if key in self.craft_recipes:
+            # เคยคราฟต์สำเร็จแล้ว ใช้เลย
+            return self.craft_recipes[key]
+
+        # ทดลองสุ่มผสม
+        new_item = combine_items(item_a, item_b, binder)
+        # ประเมินประสิทธิภาพ
+        efficiency = self.test_item(new_item)
+
+        if efficiency > 0.3:
+            self.craft_recipes[key] = new_item
+            self.craft_outcomes[key] = efficiency
+            self.memory.store(self.day, "craft", f"{item_a}+{item_b}", efficiency)
+            self.receive_pleasure("invention", efficiency)
+            # ตั้งชื่อให้วัตถุใหม่ (ใช้การสุ่มตามคุณสมบัติ)
+            name = generate_item_name(new_item.attrs)
+            # เก็บชื่อไว้ในแอตทริบิวต์ (optional)
+            new_item.name = name
+        else:
+            self.memory.store(self.day, "craft_fail", f"{item_a}+{item_b}", -efficiency)
+            self.receive_pain("failure", 0.2)
+
+        return new_item
+
+    def test_item(self, item: Item) -> float:
+        """ประเมินประสิทธิภาพของเครื่องมือเทียบกับมือเปล่า"""
+        # สมมติมือเปล่า damage = 1.0
+        base_damage = 1.0
+        item_damage = item.attrs.get("damage", 1.0)
+        # คลิปให้ไม่เกิน 1.0
+        efficiency = min(1.0, item_damage / (base_damage * 2))
+        return efficiency
+
+    def observe_craft(self, recipe_key, outcome):
+        """เรียนรู้จากการสังเกตคู่ครองคราฟต์สำเร็จ"""
+        if outcome > 0.5 and recipe_key not in self.craft_recipes:
+            self.craft_recipes[recipe_key] = outcome  # จำว่าสูตรนี้ดี
+            self.memory.store(self.day, "learn_craft", str(recipe_key), outcome)
+
+    def select_items_for_craft(self, inventory):
+        """เลือกไอเทมสองชิ้น (และอาจมีตัวมัด) จาก inventory เพื่อนำมาคราฟต์"""
+        # ตัวอย่าง: เลือกสุ่ม แต่สามารถปรับให้เลือกตามความต้องการ (เช่น อยากได้ความคม)
+        if len(inventory) < 2:
+            return None, None, None
+        # เลือกแบบสุ่ม (อาจเพิ่ม bias ตามคุณสมบัติในอนาคต)
+        items = random.sample(inventory, 2)
+        # ถ้ามีเถาวัลย์หรือวัสดุที่มี sticky > 5 ใน inventory ให้ใช้เป็น binder
+        binders = [i for i in inventory if hasattr(i, 'attrs') and i.attrs.get("sticky", 0) > 5 and i not in items]
+        binder = random.choice(binders) if binders else None
+        return items[0], items[1], binder
+
     def _is_feasible(self, action: str, perc: Dict, inv: List, pain: Dict) -> bool:
+        if action == "rub":
+            # ต้องมีของสองชิ้นที่มีความแข็ง > 5 (หินหรือกระดูก)
+            items = [i for i in inv if hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 5]
+            return len(items) >= 2
         if action == "sleep":
             return pain.get("tired",0) > 0.3 or perc.get("is_night",False)
         if action == "eat_raw":
