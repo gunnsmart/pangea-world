@@ -1,12 +1,45 @@
-// ui/static/app.js
+// app.js – ระบบกล้องเคลื่อนที่เรียบ, แท็บ, ภาษา
 let ws = null;
 let canvas = document.getElementById('map-canvas');
 let ctx = canvas.getContext('2d');
-let CELL_SIZE = 6;
+
+// ขนาดแผนที่ 100x100
 const MAP_SIZE = 100;
+let CELL_SIZE = 6;
+
+// ตัวแปรสถานะ
 let lastState = null;
 let gameOver = false;
 
+// กล้อง
+let cameraPos = { x: 50, y: 50 };
+let targetCameraPos = { x: 50, y: 50 };
+let zoom = 1.0;
+let targetZoom = 1.0;
+let cameraFocus = 'world';   // 'world', 'Adam', 'Eve'
+
+// ภาษา
+let currentLang = 'th';
+const translations = {
+    en: {
+        health: 'Health', hunger: 'Hunger', tired: 'Tired', cold: 'Cold',
+        fear: 'Fear', action: 'Action', emotion: 'Emotion',
+        actions: { sleep: 'Sleeping', eat_raw: 'Eating', eat_cooked: 'Cooking', drink: 'Drinking',
+                   seek_food: 'Seeking Food', seek_water: 'Seeking Water', explore: 'Exploring',
+                   rest: 'Resting', hunt: 'Hunting', mate: 'Mating', flee: 'Fleeing',
+                   start_fire: 'Starting Fire', craft: 'Crafting', gather: 'Gathering' }
+    },
+    th: {
+        health: 'สุขภาพ', hunger: 'ความหิว', tired: 'ความเหนื่อย', cold: 'ความหนาว',
+        fear: 'ความกลัว', action: 'การกระทำ', emotion: 'อารมณ์',
+        actions: { sleep: 'กำลังนอน', eat_raw: 'กินดิบ', eat_cooked: 'กินสุก', drink: 'ดื่มน้ำ',
+                   seek_food: 'หาอาหาร', seek_water: 'หาแหล่งน้ำ', explore: 'สำรวจ',
+                   rest: 'พักผ่อน', hunt: 'ล่าสัตว์', mate: 'สืบพันธุ์', flee: 'หนี',
+                   start_fire: 'จุดไฟ', craft: 'ประดิษฐ์', gather: 'เก็บของ' }
+    }
+};
+
+// ---------- WebSocket ----------
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
@@ -20,208 +53,322 @@ function initWebSocket() {
             addLog(data.data);
         } else if (data.type === 'dialogue') {
             addDialogue(data.data);
+        } else {
+            // ถ้าไม่มี type ให้ถือว่าเป็น full snapshot
+            lastState = data;
+            renderFull(lastState);
         }
     };
     ws.onclose = () => setTimeout(initWebSocket, 3000);
 }
 
-// Log
-function addLog(msg) {
-    const container = document.getElementById('log-list');
-    if (!container) return;
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.textContent = msg;
-    container.appendChild(entry);
-    container.scrollTop = container.scrollHeight;
-    while (container.children.length > 100) container.removeChild(container.firstChild);
-}
-
-// Dialogue
-function addDialogue(utt) {
-    const panel = document.getElementById('dialogue-panel');
-    if (!panel) return;
-    const entry = document.createElement('div');
-    entry.className = 'dialogue-entry';
-    entry.innerHTML = `<strong>${utt.speaker}</strong> ${utt.words}`;
-    panel.appendChild(entry);
-    panel.scrollTop = panel.scrollHeight;
-    while (panel.children.length > 30) panel.removeChild(panel.firstChild);
-}
-
-// รีเซ็ต log (ใช้เมื่อได้รับ history ใหม่)
-function clearLog() {
-    const container = document.getElementById('log-list');
-    if (container) container.innerHTML = '';
-}
-function clearDialogue() {
-    const panel = document.getElementById('dialogue-panel');
-    if (panel) panel.innerHTML = '';
-}
-
+// ---------- UI Update Functions ----------
 function renderFull(state) {
-    if (!state) return;
-    // Update header stats
-    document.getElementById('day').innerText = state.day;
-    document.getElementById('time').innerText = state.time || `${state.hour}:00`;
-    document.getElementById('temp').innerText = state.temp;
-    document.getElementById('weather').innerText = state.weather;
-    document.getElementById('biomass').innerText = state.biomass.toFixed(1);
-    document.getElementById('rabbit').innerText = state.fauna.rabbit;
-    document.getElementById('deer').innerText = state.fauna.deer;
-    document.getElementById('tiger').innerText = state.fauna.tiger;
-    document.getElementById('eagle').innerText = state.fauna.eagle;
+    // Header
+    document.getElementById('day-display').innerText = `Day ${state.day}`;
+    document.getElementById('temp-display').innerText = `${state.temp}°C`;
+    document.getElementById('weather-display').innerText = state.weather;
+    document.getElementById('s-temp').innerText = state.temp;
+    document.getElementById('s-moisture').innerText = state.moisture;
+    document.getElementById('s-biomass').innerText = state.biomass.toFixed(1);
+    document.getElementById('s-season').innerText = state.season;
 
-    // Update relationship
+    // Stats
+    if (state.fauna) {
+        document.getElementById('s-rabbit').innerText = state.fauna.rabbit;
+        document.getElementById('s-deer').innerText = state.fauna.deer;
+        document.getElementById('s-tiger').innerText = state.fauna.tiger;
+        document.getElementById('s-eagle').innerText = state.fauna.eagle;
+    }
+
+    // Relationship
     if (state.relationship) {
-        document.getElementById('rel-stage').innerText = state.relationship.stage;
-        setBar('rel-bond', 'rel-bond-val', state.relationship.bond, 100);
-        setBar('rel-trust', 'rel-trust-val', state.relationship.trust, 100);
-        setBar('rel-conflict', 'rel-conflict-val', state.relationship.conflict, 100);
+        const rel = state.relationship;
+        document.getElementById('rel-stage').innerText = rel.stage;
+        setBarWidth('rel-bond-bar', rel.bond);
+        setBarWidth('rel-trust-bar', rel.trust);
+        setBarWidth('rel-conflict-bar', rel.conflict);
+        document.getElementById('rel-bond-val').innerText = rel.bond;
+        document.getElementById('rel-trust-val').innerText = rel.trust;
+        document.getElementById('rel-conflict-val').innerText = rel.conflict;
     }
 
-    // Update disasters
-    const dsec = document.getElementById('disaster-section');
-    if (dsec) {
-        if (state.disasters && state.disasters.length) {
-            dsec.innerHTML = state.disasters.map(d => `<div class="alert">⚠️ ${d.label} — ${(d.severity*100).toFixed(0)}% | เหลือ ${d.days_left} วัน</div>`).join('');
-        } else {
-            dsec.innerHTML = '';
-        }
+    // Disasters
+    const disasterDiv = document.getElementById('disaster-section');
+    if (state.disasters && state.disasters.length) {
+        disasterDiv.innerHTML = state.disasters.map(d => `
+            <div class="stat-card" style="border-color:#ff2d55;">
+                <div>⚠️ ${d.label} — ${(d.severity*100).toFixed(0)}% | เหลือ ${d.days_left} วัน</div>
+            </div>
+        `).join('');
+    } else {
+        disasterDiv.innerHTML = '';
     }
 
-    // Update fire info
+    // Fire spots
     const fireDiv = document.getElementById('fire-info');
-    if (fireDiv) {
-        if (state.fire_spots && state.fire_spots.length) {
-            fireDiv.innerHTML = state.fire_spots.map(f => `<div>🔥 ที่ (${f.x},${f.y}) | ความรุนแรง ${f.intensity}</div>`).join('');
-        } else {
-            fireDiv.innerHTML = 'ไม่มีกองไฟ';
-        }
+    if (state.fire_spots && state.fire_spots.length) {
+        fireDiv.innerHTML = state.fire_spots.map(f => `<div>🔥 ที่ (${f.x},${f.y}) | ความรุนแรง ${f.intensity}</div>`).join('');
+    } else {
+        fireDiv.innerHTML = 'ไม่มีกองไฟ';
     }
 
-    // Update atmosphere
-    const atmoGrid = document.getElementById('atmo-grid');
-    if (atmoGrid && state.atmosphere) {
-        atmoGrid.innerHTML = Object.entries(state.atmosphere).map(([k,v]) => `<div class="stat">${k}: <span>${v}</span></div>`).join('');
+    // Atmosphere
+    const atmoDiv = document.getElementById('atmo-grid');
+    if (state.atmosphere) {
+        atmoDiv.innerHTML = Object.entries(state.atmosphere).map(([k,v]) => `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join('');
     }
 
-    // Update dialogue panel from state.dialogue (initial history)
-    const dialoguePanel = document.getElementById('dialogue-panel');
-    if (dialoguePanel && state.dialogue && state.dialogue.length) {
-        dialoguePanel.innerHTML = state.dialogue.map(d => `<div class="dialogue-entry"><strong>${d.speaker}</strong> ${d.words}</div>`).join('');
-    } else if (dialoguePanel) {
-        dialoguePanel.innerHTML = '<div class="dialogue-entry">ยังไม่มีบทสนทนา</div>';
-    }
-
-    // Update humans
+    // Humans
     renderHumans(state.humans);
 
-    // Update map
-    drawMap(state.map);
-
-    // Update log panel from state.history
+    // Logs (history)
     if (state.history && state.history.length) {
-        clearLog();
-        state.history.slice(-50).forEach(msg => addLog(msg));
+        const logContainer = document.getElementById('log-list');
+        logContainer.innerHTML = '';
+        state.history.slice().reverse().slice(0, 50).forEach(msg => addLog(msg));
     }
 
-    // Check game over
-    checkGameOver(state);
+    // ตั้งค่าเป้าหมายกล้องตาม focus
+    if (cameraFocus !== 'world') {
+        const targetHuman = state.humans.find(h => h.name === cameraFocus);
+        if (targetHuman) {
+            let x = Array.isArray(targetHuman.pos) ? targetHuman.pos[1] : targetHuman.pos.x;
+            let y = Array.isArray(targetHuman.pos) ? targetHuman.pos[0] : targetHuman.pos.y;
+            targetCameraPos = { x, y };
+            targetZoom = 3.0;
+        } else {
+            targetCameraPos = { x: 50, y: 50 };
+            targetZoom = 1.0;
+        }
+    } else {
+        targetCameraPos = { x: 50, y: 50 };
+        targetZoom = 1.0;
+    }
+
+    // Game over
+    const extinct = state.humans.length === 0 || state.game_over === true;
+    const banner = document.getElementById('game-over-banner');
+    if (extinct && !gameOver) {
+        gameOver = true;
+        banner.classList.add('show');
+    } else if (!extinct && gameOver) {
+        gameOver = false;
+        banner.classList.remove('show');
+    }
+
+    // รีเซ็ตกล้อง (เพื่อให้แอนิเมชันทำงาน)
+    requestAnimationFrame(drawMapAnimated);
 }
 
 function renderHumans(humans) {
-    const container = document.getElementById('humans-panel');
-    if (!container) return;
-    if (!humans || humans.length === 0) {
-        container.innerHTML = '<div class="human-card">ไม่มีมนุษย์รอดชีวิต</div>';
+    const container = document.getElementById('humans-container');
+    if (!humans || !humans.length) {
+        container.innerHTML = '<div class="stat-card">ไม่มีมนุษย์</div>';
         return;
     }
+    const t = translations[currentLang];
     container.innerHTML = humans.map(h => {
-        const d = h.drives || {};
+        const drives = h.drives || {};
+        const skill = h.skills || {};
+        const actionKey = h.action?.toLowerCase().replace(/ /g, '_');
+        const actionText = t.actions[actionKey] || h.action;
+        const langInfo = h.language || {};
+        const topWords = langInfo.top_words || [];
         return `
-        <div class="human-card">
-            <div class="human-name">${h.name} (${h.sex === 'M' ? '♂' : '♀'})</div>
-            <div class="human-stats">
-                Health: ${(h.health || 0).toFixed(0)} | Age: ${(h.age || 0).toFixed(1)}<br>
-                Action: ${h.action || 'idle'}<br>
-                Emotion: ${h.emotion || '😐'}<br>
-                Hunger: ${(d.hunger || 0).toFixed(0)} | Tired: ${(d.tired || 0).toFixed(0)}<br>
-                Cold: ${(d.cold || 0).toFixed(0)} | Fear: ${(d.fear || 0).toFixed(0)}<br>
-                Lonely: ${(d.lonely || 0).toFixed(0)} | Bored: ${(d.bored || 0).toFixed(0)}
+            <div class="human-card">
+                <div class="human-header">
+                    <span class="human-name">${h.name} (${h.sex === 'M' ? '♂' : '♀'})</span>
+                    <span class="human-action">${actionText}</span>
+                </div>
+                <div class="human-stats-grid">
+                    <div class="human-stat"><span class="human-stat-label">❤️ ${t.health}:</span> <span>${(h.health || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">👤 อายุ:</span> <span>${(h.age || 0).toFixed(1)}y</span></div>
+                    <div class="human-stat"><span class="human-stat-label">🍖 ${t.hunger}:</span> <span>${(drives.hunger || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">💤 ${t.tired}:</span> <span>${(drives.tired || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">❄️ ${t.cold}:</span> <span>${(drives.cold || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">😱 ${t.fear}:</span> <span>${(drives.fear || 0).toFixed(0)}</span></div>
+                </div>
+                <div class="human-stats-grid">
+                    <div class="human-stat"><span class="human-stat-label">🏹 ล่า:</span> <span>${(skill.hunt || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">🔥 ไฟ:</span> <span>${(skill.fire || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">🍳 ปรุง:</span> <span>${(skill.cook || 0).toFixed(0)}</span></div>
+                    <div class="human-stat"><span class="human-stat-label">🔨 ประดิษฐ์:</span> <span>${(skill.craft || 0).toFixed(0)}</span></div>
+                </div>
+                <div class="human-stat"><span class="human-stat-label">${t.emotion}:</span> <span>${h.emotion || '😐'}</span></div>
+                ${h.last_speech ? `<div class="speech-bubble">💬 "${h.last_speech}"</div>` : ''}
+                ${langInfo.vocab_size ? `<div style="margin-top:6px; font-size:10px; color:#4a6080;">📚 คำศัพท์ ${langInfo.vocab_size} คำ | พูด ${langInfo.total_utterances} ครั้ง</div>` : ''}
+                ${topWords.length ? `<div style="margin-top:4px;">${topWords.map(w => `<span class="badge" style="background:#1e2d3d; padding:2px 6px; border-radius:12px; font-size:9px;">${w.form}(${w.uses})</span>`).join(' ')}</div>` : ''}
             </div>
-            ${h.last_speech ? `<div style="margin-top:6px;font-style:italic;">💬 "${h.last_speech}"</div>` : ''}
-        </div>`;
+        `;
     }).join('');
 }
 
-function setBar(barId, valId, val, max) {
-    const bar = document.getElementById(barId);
-    const txt = document.getElementById(valId);
-    if (bar) {
-        const percent = Math.min(100, (val / max) * 100);
-        bar.style.width = `${percent}%`;
-    }
-    if (txt) txt.innerText = val;
+function addLog(msg) {
+    const container = document.getElementById('log-list');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = msg;
+    container.prepend(entry);
+    while (container.children.length > 100) container.removeChild(container.lastChild);
 }
 
-function drawMap(mapData) {
-    if (!mapData || mapData.length !== MAP_SIZE) return;
-    const container = document.querySelector('.map-container');
+function addDialogue(utt) {
+    // ใช้ร่วมกับ log หรือเพิ่มใน panel dialogue แยก
+    const panel = document.getElementById('dialogue-panel');
+    if (panel) {
+        const div = document.createElement('div');
+        div.className = 'dialogue-entry';
+        div.innerHTML = `<strong>${utt.speaker}</strong> ${utt.words}`;
+        panel.prepend(div);
+        while (panel.children.length > 30) panel.removeChild(panel.lastChild);
+    } else {
+        addLog(`💬 ${utt.speaker}: ${utt.words}`);
+    }
+}
+
+// ---------- Canvas Drawing with Camera ----------
+function drawMapAnimated() {
+    if (!lastState || !lastState.map) return;
+    // Smooth interpolation
+    cameraPos.x += (targetCameraPos.x - cameraPos.x) * 0.08;
+    cameraPos.y += (targetCameraPos.y - cameraPos.y) * 0.08;
+    zoom += (targetZoom - zoom) * 0.08;
+
+    const container = document.querySelector('.canvas-wrapper');
     const maxSize = Math.min(container.clientWidth, container.clientHeight) - 20;
     CELL_SIZE = Math.floor(maxSize / MAP_SIZE);
     if (CELL_SIZE < 2) CELL_SIZE = 2;
     canvas.width = MAP_SIZE * CELL_SIZE;
     canvas.height = MAP_SIZE * CELL_SIZE;
 
-    const imgData = ctx.createImageData(canvas.width, canvas.height);
-    const data = imgData.data;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    // Translate to center, scale, then translate to camera position
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-cameraPos.x * CELL_SIZE - CELL_SIZE/2, -cameraPos.y * CELL_SIZE - CELL_SIZE/2);
+
+    // Draw map (RGB grid)
+    const mapData = lastState.map;
     for (let r = 0; r < MAP_SIZE; r++) {
         for (let c = 0; c < MAP_SIZE; c++) {
-            const [R, G, B] = mapData[r][c];
-            for (let dy = 0; dy < CELL_SIZE; dy++) {
-                for (let dx = 0; dx < CELL_SIZE; dx++) {
-                    const idx = ((r * CELL_SIZE + dy) * canvas.width + (c * CELL_SIZE + dx)) * 4;
-                    data[idx] = R;
-                    data[idx+1] = G;
-                    data[idx+2] = B;
-                    data[idx+3] = 255;
-                }
+            const [R,G,B] = mapData[r][c];
+            ctx.fillStyle = `rgb(${R},${G},${B})`;
+            ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+    }
+
+    // Draw animals
+    if (lastState.animals) {
+        for (const a of lastState.animals) {
+            if (!a.alive) continue;
+            let x = Array.isArray(a.pos) ? a.pos[1] : a.pos.x;
+            let y = Array.isArray(a.pos) ? a.pos[0] : a.pos.y;
+            ctx.font = `${CELL_SIZE * 0.7}px "Segoe UI Emoji"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.fillText(a.icon || (a.type === 'Carnivore' ? '🐯' : '🦌'), x*CELL_SIZE + CELL_SIZE/2, y*CELL_SIZE + CELL_SIZE/2);
+        }
+    }
+
+    // Draw humans
+    if (lastState.humans) {
+        for (const h of lastState.humans) {
+            let x = Array.isArray(h.pos) ? h.pos[1] : h.pos.x;
+            let y = Array.isArray(h.pos) ? h.pos[0] : h.pos.y;
+            // วงกลมมนุษย์
+            ctx.beginPath();
+            ctx.arc(x*CELL_SIZE + CELL_SIZE/2, y*CELL_SIZE + CELL_SIZE/2, CELL_SIZE/2.2, 0, 2*Math.PI);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.fillStyle = '#111720';
+            ctx.font = `bold ${CELL_SIZE * 0.5}px sans-serif`;
+            ctx.fillText(h.name, x*CELL_SIZE + CELL_SIZE/2, y*CELL_SIZE + CELL_SIZE/2 - CELL_SIZE/3);
+            // Speech bubble
+            if (h.last_speech) {
+                const words = h.last_speech;
+                ctx.font = `${CELL_SIZE * 0.4}px monospace`;
+                const metrics = ctx.measureText(words);
+                const textWidth = metrics.width;
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(x*CELL_SIZE + CELL_SIZE/2 - textWidth/2 - 4, y*CELL_SIZE + CELL_SIZE/2 - CELL_SIZE/1.5, textWidth + 8, CELL_SIZE/1.8);
+                ctx.fillStyle = '#39ff14';
+                ctx.fillText(words, x*CELL_SIZE + CELL_SIZE/2, y*CELL_SIZE + CELL_SIZE/2 - CELL_SIZE/1.8);
             }
         }
     }
-    ctx.putImageData(imgData, 0, 0);
+
+    ctx.restore();
+    requestAnimationFrame(drawMapAnimated);
 }
 
-function checkGameOver(state) {
-    const extinct = !state.humans || state.humans.length === 0 || state.game_over === true;
-    const banner = document.getElementById('game-over-banner');
-    if (extinct && !gameOver) {
-        gameOver = true;
-        if (banner) banner.style.display = 'flex';
-    } else if (!extinct && gameOver) {
-        gameOver = false;
-        if (banner) banner.style.display = 'none';
-    }
+// ---------- Helper ----------
+function setBarWidth(id, value) {
+    const bar = document.getElementById(id);
+    if (bar) bar.style.width = `${Math.min(100, value)}%`;
 }
 
 function sendCmd(cmd) {
-    fetch(`/api/command/${cmd}`, { method: 'POST' }).catch(console.error);
+    fetch(`/api/command/${cmd}`, { method: 'POST' }).catch(e => console.error(e));
 }
 
-// Event listeners
+// ---------- Event Listeners ----------
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+}
+
+function setLanguage(lang) {
+    currentLang = lang;
+    document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.lang-btn[data-lang="${lang}"]`).classList.add('active');
+    if (lastState) renderHumans(lastState.humans);
+}
+
+function setCameraFocus(focus) {
+    cameraFocus = focus;
+    document.querySelectorAll('.camera-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.camera-btn[data-focus="${focus}"]`).classList.add('active');
+    if (focus === 'world') {
+        targetCameraPos = { x: 50, y: 50 };
+        targetZoom = 1.0;
+    } else if (lastState) {
+        const targetHuman = lastState.humans.find(h => h.name === focus);
+        if (targetHuman) {
+            let x = Array.isArray(targetHuman.pos) ? targetHuman.pos[1] : targetHuman.pos.x;
+            let y = Array.isArray(targetHuman.pos) ? targetHuman.pos[0] : targetHuman.pos.y;
+            targetCameraPos = { x, y };
+            targetZoom = 3.0;
+        } else {
+            targetCameraPos = { x: 50, y: 50 };
+            targetZoom = 1.0;
+        }
+    }
+}
+
+// ---------- Initialization ----------
 window.addEventListener('load', () => {
     initWebSocket();
-    // Set up controls if buttons exist
-    const btnPause = document.getElementById('btn-pause');
-    const btnReset = document.getElementById('btn-reset');
-    if (btnPause) btnPause.addEventListener('click', () => sendCmd('pause'));
-    if (btnReset) btnReset.addEventListener('click', () => sendCmd('reset'));
-    // Also start button if exists
-    const btnStart = document.getElementById('btn-start');
-    if (btnStart) btnStart.addEventListener('click', () => sendCmd('start'));
-});
 
-window.addEventListener('resize', () => {
-    if (lastState && lastState.map) drawMap(lastState.map);
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    // Language
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', () => setLanguage(btn.dataset.lang));
+    });
+    // Camera focus
+    document.querySelectorAll('.camera-btn').forEach(btn => {
+        btn.addEventListener('click', () => setCameraFocus(btn.dataset.focus));
+    });
+    // Pause button
+    document.getElementById('pause-btn').addEventListener('click', () => sendCmd('pause'));
+
+    // Start animation loop
+    requestAnimationFrame(drawMapAnimated);
 });
