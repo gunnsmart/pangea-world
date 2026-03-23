@@ -3,92 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Pangea - วิวัฒนาการแห่งภาษา</title>
+    <title>Pangea – วิวัฒนาการแห่งภาษา</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="app">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="logo">🧬 PANGEA</div>
-
-            <!-- Stats Panel -->
-            <div class="stats-panel" id="stats-panel">
-                <div class="stat">🌡 อุณหภูมิ: <span id="s-temp">--</span>°C</div>
-                <div class="stat">💧 ความชื้น: <span id="s-moisture">--</span></div>
-                <div class="stat">☁️ สภาพอากาศ: <span id="s-weather">--</span></div>
-                <div class="stat">🌿 ชีวมวล: <span id="s-biomass">--</span></div>
-                <div class="stat">🐰 กระต่าย: <span id="s-rabbit">--</span></div>
-                <div class="stat">🦌 กวาง: <span id="s-deer">--</span></div>
-                <div class="stat">🐯 เสือ: <span id="s-tiger">--</span></div>
-                <div class="stat">🦅 นกอินทรี: <span id="s-eagle">--</span></div>
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🧬</span>
+                <span class="logo-text">PANGEA SIMULATION</span>
             </div>
-
-            <!-- Disasters Alert -->
-            <div id="disaster-section" class="stats-panel" style="background:#2d1a1a;"></div>
-
-            <!-- Humans Panel -->
-            <div class="humans-panel" id="humans-container"></div>
-
-            <!-- Relationship -->
-            <div class="stats-panel" style="display:flex; flex-direction:column;">
-                <div style="text-align:center; font-weight:bold;">💑 ความสัมพันธ์</div>
-                <div id="rel-stage" style="text-align:center;">--</div>
-                <div class="relationship-bar">
-                    <div class="rel-label">❤️ Bond</div>
-                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-bond" style="width:0%;background:#ff6b9d"></div></div>
-                    <div class="drive-val" id="rel-bond-val">0</div>
+            <div class="header-stats">
+                <div class="stat-item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/></svg>
+                    <span id="day-display">Day 0</span>
                 </div>
-                <div class="relationship-bar">
-                    <div class="rel-label">🤝 Trust</div>
-                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-trust" style="width:0%;background:#00d4ff"></div></div>
-                    <div class="drive-val" id="rel-trust-val">0</div>
+                <div class="stat-item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                    <span id="temp-display">--°C</span>
                 </div>
-                <div class="relationship-bar">
-                    <div class="rel-label">⚔️ Conflict</div>
-                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-conflict" style="width:0%;background:#ff2d55"></div></div>
-                    <div class="drive-val" id="rel-conflict-val">0</div>
+                <div class="stat-item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+                    <span id="weather-display">--</span>
                 </div>
             </div>
+            <div class="header-controls">
+                <div class="camera-group">
+                    <button class="camera-btn" data-focus="world">🌍 โลก</button>
+                    <button class="camera-btn" data-focus="Adam">👨 อดัม</button>
+                    <button class="camera-btn" data-focus="Eve">👩 อีฟ</button>
+                </div>
+                <div class="lang-group">
+                    <button class="lang-btn" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="th">TH</button>
+                </div>
+                <button id="pause-btn" class="control-btn">⏸️ หยุด</button>
+            </div>
+        </header>
 
-            <!-- Fire Info -->
-            <div class="stats-panel">
-                <div style="font-weight:bold;">🔥 กองไฟ</div>
-                <div id="fire-info" style="font-size:11px;">ไม่มีกองไฟ</div>
+        <!-- Main area -->
+        <div class="main-layout">
+            <!-- Canvas container -->
+            <div class="canvas-container">
+                <div class="canvas-wrapper">
+                    <canvas id="map-canvas" width="600" height="600"></canvas>
+                </div>
+                <div class="legend">
+                    <span><span class="legend-dot human"></span> มนุษย์</span>
+                    <span><span class="legend-dot carnivore"></span> สัตว์กินเนื้อ</span>
+                    <span><span class="legend-dot herbivore"></span> สัตว์กินพืช</span>
+                    <span><span class="legend-dot forest"></span> ป่า</span>
+                    <span><span class="legend-dot water"></span> น้ำ</span>
+                </div>
             </div>
 
-            <!-- Atmosphere -->
-            <div class="stats-panel" id="atmo-grid"></div>
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="stats">📊 สถิติ</button>
+                    <button class="tab-btn" data-tab="humans">🧑 มนุษย์</button>
+                    <button class="tab-btn" data-tab="eco">🌿 ระบบนิเวศ</button>
+                    <button class="tab-btn" data-tab="log">📜 บันทึก</button>
+                </div>
 
-            <!-- Dialogue Panel -->
-            <div class="stats-panel" style="max-height:200px; overflow-y:auto;">
-                <div style="font-weight:bold;">💬 บทสนทนา</div>
-                <div id="dialogue-panel" style="font-size:11px;"></div>
-            </div>
+                <div class="tab-content">
+                    <!-- Stats Tab -->
+                    <div id="tab-stats" class="tab-pane active">
+                        <div class="stat-card">
+                            <h3>สภาพแวดล้อม</h3>
+                            <div class="metric-grid">
+                                <div class="metric"><span>อุณหภูมิ</span><strong id="s-temp">--</strong>°C</div>
+                                <div class="metric"><span>ความชื้น</span><strong id="s-moisture">--</strong></div>
+                                <div class="metric"><span>ชีวมวล</span><strong id="s-biomass">--</strong></div>
+                                <div class="metric"><span>ฤดูกาล</span><strong id="s-season">--</strong></div>
+                            </div>
+                        </div>
 
-            <!-- Log Panel -->
-            <div class="log-panel" id="log-list">
-                <!-- Logs will appear here -->
-            </div>
-        </div>
+                        <div class="stat-card">
+                            <h3>ความสัมพันธ์</h3>
+                            <div id="rel-stage" class="rel-stage">--</div>
+                            <div class="drive-row"><span>💞 Bond</span><div class="bar"><div id="rel-bond-bar" class="bar-fill" style="width:0%"></div></div><span id="rel-bond-val">0</span></div>
+                            <div class="drive-row"><span>🤝 Trust</span><div class="bar"><div id="rel-trust-bar" class="bar-fill" style="width:0%"></div></div><span id="rel-trust-val">0</span></div>
+                            <div class="drive-row"><span>⚔️ Conflict</span><div class="bar"><div id="rel-conflict-bar" class="bar-fill" style="width:0%"></div></div><span id="rel-conflict-val">0</span></div>
+                        </div>
 
-        <!-- Map Area -->
-        <div class="map-container">
-            <canvas id="map-canvas" width="600" height="600"></canvas>
-        </div>
+                        <div class="stat-card">
+                            <h3>สัตว์ป่า</h3>
+                            <div class="metric-grid">
+                                <div class="metric"><span>🐰 กระต่าย</span><strong id="s-rabbit">--</strong></div>
+                                <div class="metric"><span>🦌 กวาง</span><strong id="s-deer">--</strong></div>
+                                <div class="metric"><span>🐯 เสือ</span><strong id="s-tiger">--</strong></div>
+                                <div class="metric"><span>🦅 นกอินทรี</span><strong id="s-eagle">--</strong></div>
+                            </div>
+                        </div>
 
-        <!-- Controls -->
-        <div class="controls">
-            <button id="btn-start" onclick="sendCmd('start')">▶️ เริ่ม</button>
-            <button id="btn-pause" onclick="sendCmd('pause')">⏸️ หยุด</button>
-            <button onclick="sendCmd('reset')">⟳ รีเซ็ต</button>
+                        <div id="disaster-section"></div>
+                    </div>
+
+                    <!-- Humans Tab -->
+                    <div id="tab-humans" class="tab-pane">
+                        <div id="humans-container"></div>
+                    </div>
+
+                    <!-- Eco Tab -->
+                    <div id="tab-eco" class="tab-pane">
+                        <div class="stat-card">
+                            <h3>บรรยากาศ</h3>
+                            <div id="atmo-grid" class="metric-grid"></div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>🔥 กองไฟ</h3>
+                            <div id="fire-info">ไม่มีกองไฟ</div>
+                        </div>
+                    </div>
+
+                    <!-- Log Tab -->
+                    <div id="tab-log" class="tab-pane">
+                        <div id="log-list" class="log-list"></div>
+                    </div>
+                </div>
+            </aside>
         </div>
 
         <!-- Game Over Banner -->
-        <div id="game-over-banner" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:200; justify-content:center; align-items:center; flex-direction:column;">
-            <h1 style="color:#ff2d55;">🌑 EXTINCTION</h1>
-            <p style="color:#ccc;">Adam และ Eve สูญพันธุ์แล้ว</p>
-            <button onclick="sendCmd('reset')" style="margin-top:20px; padding:10px 20px;">↺ เริ่มใหม่</button>
+        <div id="game-over-banner" class="game-over">
+            <h1>🌑 EXTINCTION</h1>
+            <p>Adam และ Eve สูญพันธุ์แล้ว</p>
+            <button onclick="sendCmd('reset')">↺ เริ่มใหม่</button>
         </div>
     </div>
 
