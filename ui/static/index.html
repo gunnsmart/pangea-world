@@ -2,35 +2,96 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>🧬 Pangea Simulation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Pangea - วิวัฒนาการแห่งภาษา</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="app">
+        <!-- Sidebar -->
         <div class="sidebar">
             <div class="logo">🧬 PANGEA</div>
+
+            <!-- Stats Panel -->
             <div class="stats-panel" id="stats-panel">
-                <div class="stat">Day: <span id="day">0</span></div>
-                <div class="stat">Time: <span id="time">12:00</span></div>
-                <div class="stat">Temp: <span id="temp">--</span>°C</div>
-                <div class="stat">Weather: <span id="weather">--</span></div>
-                <div class="stat">Biomass: <span id="biomass">--</span></div>
-                <div class="stat">Rabbits: <span id="rabbit">--</span></div>
-                <div class="stat">Deer: <span id="deer">--</span></div>
-                <div class="stat">Tigers: <span id="tiger">--</span></div>
+                <div class="stat">🌡 อุณหภูมิ: <span id="s-temp">--</span>°C</div>
+                <div class="stat">💧 ความชื้น: <span id="s-moisture">--</span></div>
+                <div class="stat">☁️ สภาพอากาศ: <span id="s-weather">--</span></div>
+                <div class="stat">🌿 ชีวมวล: <span id="s-biomass">--</span></div>
+                <div class="stat">🐰 กระต่าย: <span id="s-rabbit">--</span></div>
+                <div class="stat">🦌 กวาง: <span id="s-deer">--</span></div>
+                <div class="stat">🐯 เสือ: <span id="s-tiger">--</span></div>
+                <div class="stat">🦅 นกอินทรี: <span id="s-eagle">--</span></div>
             </div>
-            <div class="humans-panel" id="humans-panel"></div>
-            <div class="log-panel" id="log-panel"></div>
+
+            <!-- Disasters Alert -->
+            <div id="disaster-section" class="stats-panel" style="background:#2d1a1a;"></div>
+
+            <!-- Humans Panel -->
+            <div class="humans-panel" id="humans-container"></div>
+
+            <!-- Relationship -->
+            <div class="stats-panel" style="display:flex; flex-direction:column;">
+                <div style="text-align:center; font-weight:bold;">💑 ความสัมพันธ์</div>
+                <div id="rel-stage" style="text-align:center;">--</div>
+                <div class="relationship-bar">
+                    <div class="rel-label">❤️ Bond</div>
+                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-bond" style="width:0%;background:#ff6b9d"></div></div>
+                    <div class="drive-val" id="rel-bond-val">0</div>
+                </div>
+                <div class="relationship-bar">
+                    <div class="rel-label">🤝 Trust</div>
+                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-trust" style="width:0%;background:#00d4ff"></div></div>
+                    <div class="drive-val" id="rel-trust-val">0</div>
+                </div>
+                <div class="relationship-bar">
+                    <div class="rel-label">⚔️ Conflict</div>
+                    <div class="rel-bar-wrap"><div class="rel-bar" id="rel-conflict" style="width:0%;background:#ff2d55"></div></div>
+                    <div class="drive-val" id="rel-conflict-val">0</div>
+                </div>
+            </div>
+
+            <!-- Fire Info -->
+            <div class="stats-panel">
+                <div style="font-weight:bold;">🔥 กองไฟ</div>
+                <div id="fire-info" style="font-size:11px;">ไม่มีกองไฟ</div>
+            </div>
+
+            <!-- Atmosphere -->
+            <div class="stats-panel" id="atmo-grid"></div>
+
+            <!-- Dialogue Panel -->
+            <div class="stats-panel" style="max-height:200px; overflow-y:auto;">
+                <div style="font-weight:bold;">💬 บทสนทนา</div>
+                <div id="dialogue-panel" style="font-size:11px;"></div>
+            </div>
+
+            <!-- Log Panel -->
+            <div class="log-panel" id="log-list">
+                <!-- Logs will appear here -->
+            </div>
         </div>
+
+        <!-- Map Area -->
         <div class="map-container">
-            <canvas id="map-canvas"></canvas>
+            <canvas id="map-canvas" width="600" height="600"></canvas>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="btn-start" onclick="sendCmd('start')">▶️ เริ่ม</button>
+            <button id="btn-pause" onclick="sendCmd('pause')">⏸️ หยุด</button>
+            <button onclick="sendCmd('reset')">⟳ รีเซ็ต</button>
+        </div>
+
+        <!-- Game Over Banner -->
+        <div id="game-over-banner" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:200; justify-content:center; align-items:center; flex-direction:column;">
+            <h1 style="color:#ff2d55;">🌑 EXTINCTION</h1>
+            <p style="color:#ccc;">Adam และ Eve สูญพันธุ์แล้ว</p>
+            <button onclick="sendCmd('reset')" style="margin-top:20px; padding:10px 20px;">↺ เริ่มใหม่</button>
         </div>
     </div>
-    <div class="controls">
-        <button id="btn-pause">⏸ Pause</button>
-        <button id="btn-reset">↺ Reset</button>
-    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html>
