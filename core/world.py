@@ -29,8 +29,8 @@ class World:
         self.fires = FireSystem()
         self.relationship = Relationship("Adam", "Eve")
         self.humans = [
-            HumanAI("Adam", 170, 70, "Eve"),
-            HumanAI("Eve", 160, 55, "Adam")
+            HumanAI("Adam", 170, 70, "Eve", time_scale=1.0),
+            HumanAI("Eve", 160, 55, "Adam", time_scale=1.0)
         ]
         self.animals = spawn_wildlife()
         self.event_bus = EventBus()

@@ -43,6 +43,12 @@ class Body:
             self.strength = 55.0
             self.stamina = 80.0
 
+        # ปรับ stamina และ strength สูงสุดในช่วงอายุ 20-30 ปี (สมองวัย 25)
+        age_y = self.age_years
+        if 20 <= age_y <= 30:
+            self.stamina = 100.0   # peak
+            self.strength = 100.0 if sex == "M" else 85.0 # peak adjusted by sex
+
         self.fat_reserve = mass * self.fat_ratio * 7700
         self.health = 100.0
         self.u_energy = 2000.0

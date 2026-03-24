@@ -11,12 +11,26 @@ from item import create_item, Item
 from crafting import generate_item_name
 
 class HumanAI:
-    def __init__(self, name: str, height: float, mass: float, partner_name: str):
+    def __init__(self, name: str, height: float, mass: float, partner_name: str, time_scale: float = 1.0):
         self.name = name
         self.partner_name = partner_name
         self.sex = "M" if name == "Adam" else "F"
         self.body = Body(name, self.sex, mass, height)
-        self.brain = Brain(name)
+        
+        # กำหนดฐานความรู้พื้นฐานสำหรับผู้ใหญ่ (Common Sense)
+        common_sense = {
+            # ความรู้เกี่ยวกับวัตถุ/สัตว์
+            "raw_meat": {"eat_raw": -10, "cook": 50, "share_food": 30},
+            "fire": {"touch": -100, "warm_up": 30, "cook_near": 40},
+            "tiger": {"approach": -100, "flee": 80, "hide": 70},
+            "water": {"drink": 50, "wash": 20},
+            "berry": {"eat": 40, "pick": 30},
+            # ความรู้ทางสังคม
+            "human": {"attack": -50, "share_food": 60, "protect": 40, "mate": 30},
+            # ความรู้เกี่ยวกับตนเอง
+            "self": {"injured": {"rest": 50, "seek_herb": 30}}
+        }
+        self.brain = Brain(name, time_scale=time_scale, common_sense=common_sense)
         self.vision = VisionSystem()
         self.hearing = SoundSystem()
         self.ltm = LongTermMemory()
@@ -259,6 +273,21 @@ class HumanAI:
                 else:
                     world.event_bus.emit("log", f"🪨 {self.name} ขัดสีหินแต่ยังไม่เกิดไฟ")
                     self.brain.receive_pain("failure", 0.1)
+
+        # ========== SHARE FOOD ==========
+        elif action == "share_food" and not self.sleeping:
+            if np.linalg.norm(self.pos - partner.pos) <= 3:
+                # หาอาหารใน inventory
+                food_items = [i for i in self.inventory if hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 0]
+                if food_items:
+                    food = food_items[0]
+                    self.inventory.remove(food)
+                    partner.inventory.append(food)
+                    self.brain.receive_pleasure("sharing", 0.5)
+                    partner.brain.receive_pleasure("received_food", 0.5)
+                    world.event_bus.emit("log", f"🤝 {self.name} แบ่งปัน {food.material.template.name} ให้ {partner.name}")
+                else:
+                    world.event_bus.emit("log", f"❓ {self.name} พยายามแบ่งอาหารแต่ไม่มีของ")
 
         # ========== MATE ==========
         elif action == "mate" and not self.sleeping:

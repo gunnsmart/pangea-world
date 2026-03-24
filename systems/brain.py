@@ -9,7 +9,7 @@ from item import Item
 ACTIONS = [
     "eat_raw", "eat_cooked", "drink", "toilet", "sleep", "seek_food",
     "seek_water", "seek_partner", "seek_fire", "mate", "start_fire", "cook",
-    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach", "rub"
+    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach", "rub", "share_food"
 ]
 
 DRIVE_TO_RELIEF = {
@@ -189,7 +189,8 @@ class DriveSystem:
 
 class Brain:
     def __init__(self, name: str, time_scale: float = 1.0,
-                 inherited_weights: Optional[Dict[str, float]] = None):
+                 inherited_weights: Optional[Dict[str, float]] = None,
+                 common_sense: Optional[Dict] = None):
         self.name = name
         self.time_scale = time_scale
         self.day = 0
@@ -199,6 +200,10 @@ class Brain:
                             for a in ACTIONS}
         else:
             self.weights = {a: 1.0 for a in ACTIONS}
+        
+        self.common_sense = common_sense if common_sense else {}
+        self._init_common_sense_weights()   # สร้าง base_weights จาก common_sense
+
         self.drives = DriveSystem(time_scale)
         self.emotion = Emotion()
         self.memory = EpisodicMemory()
@@ -211,6 +216,23 @@ class Brain:
         self.skill: Dict[str, float] = {"fire":0,"cook":0,"craft":0,"hunt":0,"gather":0}
         self.knows: Set[str] = set()
         self._drive_to_actions = DRIVE_TO_RELIEF
+
+    def _init_common_sense_weights(self):
+        """แปลง common_sense dictionary ให้เป็น base_weights"""
+        self.base_weights = {a: 0.0 for a in ACTIONS}
+        for context, actions in self.common_sense.items():
+            for action, value in actions.items():
+                # value คือ bias ที่จะเพิ่มให้ action ในบริบทนั้น
+                if action in self.base_weights:
+                    self.base_weights[action] += value
+        
+        # normalise เบา ๆ
+        if self.base_weights:
+            vals = [abs(v) for v in self.base_weights.values()]
+            max_w = max(vals) if vals else 1
+            if max_w > 0:
+                for a in self.base_weights:
+                    self.base_weights[a] = self.base_weights[a] / max_w * 5   # scale to reasonable range
 
     def step(self, perception: Dict) -> str:
         self.day += 1
@@ -253,8 +275,21 @@ class Brain:
         partner_hungry = perc.get("partner_hungry", False)
         partner_dist = perc.get("partner_dist", 99)
 
+        # คำนวณ panic factor จาก drives
+        panic_factor = 0.0
+        for drive in ["hunger", "thirst", "cold", "fear"]:
+            panic_factor += pain.get(drive, 0) ** 2   # ยิ่ง drive สูง ยิ่ง panic
+        panic_factor = min(1.0, panic_factor / 4)     # normalize ให้ max = 1
+
         for action in ACTIONS:
-            w = self.weights[action]
+            # base weight จาก common sense
+            base_w = self.base_weights.get(action, 0.0)
+            # learned weight (ปรับตามประสบการณ์)
+            learned_w = self.weights[action]
+
+            # น้ำหนักสุดท้าย: panic factor สูง -> ลดอิทธิพลของ common sense ลง
+            w = learned_w + base_w * (1 - panic_factor)
+
             pain_boost = 0.0
             for drive, actions in self._drive_to_actions.items():
                 if action in actions:
@@ -382,6 +417,10 @@ class Brain:
             return perc.get("danger", False)
         if action == "teach":
             return perc.get("has_child_nearby", False) and len(self.knows) > 0
+        if action == "share_food":
+            # ต้องมีอาหารในตัวและคู่หูอยู่ใกล้
+            has_food = any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 0 for i in inv) # simplified check for food
+            return has_food and perc.get("partner_dist", 99) <= 3
         return True
 
     def learn(self, action: str, outcome: float, detail: str = ""):
