@@ -98,6 +98,23 @@ class Relationship:
         if len(self.memories) > 30:
             self.memories.pop(0)
 
+    def add_trust(self, amount: float):
+        self.trust = min(100, self.trust + amount)
+        self.bond = min(100, self.bond + amount * 0.5)
+
+    def add_conflict(self, amount: float):
+        self.conflict = min(100, self.conflict + amount)
+        self.trust = max(0, self.trust - amount * 0.8)
+        self.bond = max(0, self.bond - amount * 0.3)
+
+    def comfort(self, provider_name: str, receiver_name: str):
+        """Action ปลอบโยนกัน"""
+        self.add_trust(2.0)
+        self.conflict = max(0, self.conflict - 5.0)
+        msg = f"🫂 {provider_name} ปลอบโยน {receiver_name} ให้หายกลัว"
+        self.remember(msg, +0.8)
+        return msg
+
     @property
     def summary(self) -> dict:
         return {

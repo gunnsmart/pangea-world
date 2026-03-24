@@ -11,6 +11,7 @@ from models.plant import PlantEcosystem
 from models.animal import Animal, spawn_wildlife
 from models.human import HumanAI
 from models.fire import FireSystem
+from models.shelter import ShelterSystem
 from models.relationship import Relationship
 from systems.physics import WorldPhysics
 from systems.biology import FaunaEcosystem, HumanEcosystem
@@ -28,6 +29,7 @@ class World:
         self.disasters = DisasterSystem(MAP_SIZE)
         self.physics = WorldPhysics()
         self.fires = FireSystem()
+        self.shelters = ShelterSystem()
         self.relationship = Relationship("Adam", "Eve")
         self.humans = [
             HumanAI("Adam", 170, 70, "Eve", time_scale=1.0),
@@ -140,6 +142,11 @@ class World:
         # Fire
         fire_events, _ = self.fires.step_hour(self.weather.global_temperature)
         for ev in fire_events:
+            self.event_bus.emit("log", ev)
+
+        # Shelter
+        shelter_events = self.shelters.step_hour(self.weather.current_state)
+        for ev in shelter_events:
             self.event_bus.emit("log", ev)
 
         # Humans
@@ -393,6 +400,7 @@ class World:
             "disasters": self.disasters.active_summary,
             "atmosphere": self.physics.atmo.summary,
             "fires": [f.to_dict() for f in self.fires.active_fires],
+            "shelters": [ {"pos": s.pos, "durability": s.durability} for s in self.shelters.shelters ],
             "history": self.event_bus.get_logs(30),
             "map": self._build_map(),          # <--- เพิ่ม field map
         }

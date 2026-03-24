@@ -25,7 +25,8 @@ const translations = {
         actions: { sleep: 'Sleeping', eat_raw: 'Eating', eat_cooked: 'Cooking', drink: 'Drinking',
                    seek_food: 'Seeking Food', seek_water: 'Seeking Water', explore: 'Exploring',
                    rest: 'Resting', hunt: 'Hunting', mate: 'Mating', flee: 'Fleeing',
-                   start_fire: 'Starting Fire', craft: 'Crafting', gather: 'Gathering' }
+                   start_fire: 'Starting Fire', craft: 'Crafting', gather: 'Gathering',
+                   comfort: 'Comforting', build_shelter: 'Building Shelter', rub: 'Rubbing' }
     },
     th: {
         health: 'สุขภาพ', hunger: 'ความหิว', tired: 'ความเหนื่อย', cold: 'ความหนาว',
@@ -33,7 +34,8 @@ const translations = {
         actions: { sleep: 'กำลังนอน', eat_raw: 'กินดิบ', eat_cooked: 'กินสุก', drink: 'ดื่มน้ำ',
                    seek_food: 'หาอาหาร', seek_water: 'หาแหล่งน้ำ', explore: 'สำรวจ',
                    rest: 'พักผ่อน', hunt: 'ล่าสัตว์', mate: 'สืบพันธุ์', flee: 'หนี',
-                   start_fire: 'จุดไฟ', craft: 'ประดิษฐ์', gather: 'เก็บของ' }
+                   start_fire: 'จุดไฟ', craft: 'ประดิษฐ์', gather: 'เก็บของ',
+                   comfort: 'ปลอบโยน', build_shelter: 'สร้างที่พัก', rub: 'ขัดสีหิน' }
     }
 };
 
@@ -200,6 +202,7 @@ function renderHumans(humans) {
                     <div class="human-stat"><span class="human-stat-label">🔨 ประดิษฐ์:</span> <span>${(skill.craft || 0).toFixed(0)}</span></div>
                 </div>
                 <div class="human-stat"><span class="human-stat-label">${t.emotion}:</span> <span>${h.emotion || '😐'}</span></div>
+                ${h.has_shelter ? `<div style="font-size:11px; color:#4cd964;">🏠 มีที่พักใกล้เคียง</div>` : ''}
                 ${h.last_speech ? `<div class="speech-bubble">💬 "${h.last_speech}"</div>` : ''}
                 ${langInfo.vocab_size ? `<div style="margin-top:6px; font-size:10px; color:#4a6080;">📚 คำศัพท์ ${langInfo.vocab_size} คำ | พูด ${langInfo.total_utterances} ครั้ง</div>` : ''}
                 ${topWords.length ? `<div style="margin-top:4px;">${topWords.map(w => `<span class="badge" style="background:#1e2d3d; padding:2px 6px; border-radius:12px; font-size:9px;">${w.form}(${w.uses})</span>`).join(' ')}</div>` : ''}

@@ -83,6 +83,9 @@ class HumanAI:
             "has_food": info["food_level"] > 20,
             "has_water": info.get("is_water", False),
             "has_fire": world.fires.nearby_fire(self.pos) is not None,
+            "has_shelter": world.shelters.get_nearby_shelter(self.pos) is not None,
+            "partner_fear": partner.brain.drives.fear / 100,
+            "partner_lonely": partner.brain.drives.lonely / 100,
             "has_cooked_food": len(world.fires.cooked_foods) > 0,
             "biome_food": info["food_level"],
             "is_night": world.hour >= 21 or world.hour < 6,
@@ -300,6 +303,27 @@ class HumanAI:
                         world.event_bus.emit("log", f"🤰 {partner.name} ตั้งครรภ์!")
                         self.brain.receive_pleasure("reproduce", 2.0)
                         partner.brain.receive_pleasure("reproduce", 2.0)
+
+        # ========== COMFORT ==========
+        elif action == "comfort" and not self.sleeping:
+            if np.linalg.norm(self.pos - partner.pos) <= 3:
+                msg = world.relationship.comfort(self.name, partner.name)
+                partner.brain.drives.relieve("fear", 30)
+                partner.brain.drives.relieve("lonely", 20)
+                self.brain.receive_pleasure("empathy", 0.4)
+                world.event_bus.emit("log", msg)
+
+        # ========== BUILD SHELTER ==========
+        elif action == "build_shelter" and not self.sleeping:
+            # ใช้กิ่งไม้และใบไม้
+            wood = next((i for i in self.inventory if hasattr(i, 'attrs') and i.material.template.name == "wood"), None)
+            leaf = next((i for i in self.inventory if hasattr(i, 'attrs') and i.material.template.name == "leaf"), None)
+            if wood and leaf:
+                self.inventory.remove(wood)
+                self.inventory.remove(leaf)
+                world.shelters.build_shelter([int(self.pos[0]), int(self.pos[1])])
+                self.brain.receive_pleasure("achievement", 0.6)
+                world.event_bus.emit("log", f"🏠 {self.name} สร้างที่พักชั่วคราวสำเร็จ")
 
         # ========== SEEK_* ==========
         elif action in ("seek_partner","seek_fire","seek_food","seek_water") and not self.sleeping:

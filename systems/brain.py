@@ -9,7 +9,8 @@ from item import Item
 ACTIONS = [
     "eat_raw", "eat_cooked", "drink", "toilet", "sleep", "seek_food",
     "seek_water", "seek_partner", "seek_fire", "mate", "start_fire", "cook",
-    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach", "rub", "share_food"
+    "tend_fire", "gather", "craft", "rest", "explore", "flee", "teach", "rub", "share_food",
+    "comfort", "build_shelter"
 ]
 
 DRIVE_TO_RELIEF = {
@@ -17,9 +18,9 @@ DRIVE_TO_RELIEF = {
     "thirst": ["drink", "seek_water"],
     "bladder": ["toilet"],
     "tired": ["sleep", "rest"],
-    "lonely": ["seek_partner", "mate"],
-    "cold": ["seek_fire", "start_fire", "tend_fire", "rub"],
-    "fear": ["flee", "seek_fire"],
+    "lonely": ["seek_partner", "mate", "comfort"],
+    "cold": ["seek_fire", "start_fire", "tend_fire", "rub", "build_shelter"],
+    "fear": ["flee", "seek_fire", "comfort"],
     "bored": ["explore", "gather", "craft"],
     "curious": ["explore", "craft", "gather"],
 }
@@ -421,6 +422,14 @@ class Brain:
             # ต้องมีอาหารในตัวและคู่หูอยู่ใกล้
             has_food = any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 0 for i in inv) # simplified check for food
             return has_food and perc.get("partner_dist", 99) <= 3
+        if action == "comfort":
+            # คู่หูต้องอยู่ใกล้และมีความกลัวหรือความเหงาสูง
+            return perc.get("partner_dist", 99) <= 3 and (perc.get("partner_fear", 0) > 0.3 or perc.get("partner_lonely", 0) > 0.3)
+        if action == "build_shelter":
+            # ต้องมีทรัพยากร (กิ่งไม้และใบไม้)
+            has_wood = any(hasattr(i, 'attrs') and i.material.template.name == "wood" for i in inv)
+            has_leaf = any(hasattr(i, 'attrs') and i.material.template.name == "leaf" for i in inv)
+            return has_wood and has_leaf and not perc.get("has_shelter", False)
         return True
 
     def learn(self, action: str, outcome: float, detail: str = ""):
