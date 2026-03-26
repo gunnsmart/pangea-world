@@ -26,7 +26,8 @@ const translations = {
                    seek_food: 'Seeking Food', seek_water: 'Seeking Water', explore: 'Exploring',
                    rest: 'Resting', hunt: 'Hunting', mate: 'Mating', flee: 'Fleeing',
                    start_fire: 'Starting Fire', craft: 'Crafting', gather: 'Gathering',
-                   comfort: 'Comforting', build_shelter: 'Building Shelter', rub: 'Rubbing' }
+                   comfort: 'Comforting', build_shelter: 'Building Shelter', rub: 'Rubbing',
+                   share_food: 'Sharing Food', teach: 'Teaching', toilet: 'Toilet' }
     },
     th: {
         health: 'สุขภาพ', hunger: 'ความหิว', tired: 'ความเหนื่อย', cold: 'ความหนาว',
@@ -35,7 +36,8 @@ const translations = {
                    seek_food: 'หาอาหาร', seek_water: 'หาแหล่งน้ำ', explore: 'สำรวจ',
                    rest: 'พักผ่อน', hunt: 'ล่าสัตว์', mate: 'สืบพันธุ์', flee: 'หนี',
                    start_fire: 'จุดไฟ', craft: 'ประดิษฐ์', gather: 'เก็บของ',
-                   comfort: 'ปลอบโยน', build_shelter: 'สร้างที่พัก', rub: 'ขัดสีหิน' }
+                   comfort: 'ปลอบโยน', build_shelter: 'สร้างที่พัก', rub: 'ขัดสีหิน',
+                   share_food: 'แบ่งปันอาหาร', teach: 'สอนความรู้', toilet: 'ขับถ่าย' }
     }
 };
 
@@ -70,6 +72,22 @@ function initWebSocket() {
 }
 
 // ---------- UI Updates ----------
+function getBarColor(val, inverse = false) {
+    if (inverse) {
+        if (val > 70) return '#ff3b30'; // Red
+        if (val > 40) return '#ffcc00'; // Yellow
+        return '#4cd964'; // Green
+    }
+    if (val > 70) return '#4cd964';
+    if (val > 40) return '#ffcc00';
+    return '#ff3b30';
+}
+
+function setBarWidth(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = `${Math.min(100, Math.max(0, val))}%`;
+}
+
 function renderFull(state) {
     if (!state) return;
 
@@ -190,11 +208,11 @@ function renderHumans(humans) {
                 <div class="human-stats-grid">
                     <div class="human-stat"><span class="human-stat-label">❤️ ${t.health}:</span> <span>${(h.health || 0).toFixed(0)}</span></div>
                     <div class="human-stat"><span class="human-stat-label">👤 อายุ:</span> <span>${(h.age || 0).toFixed(1)}y</span></div>
-                    <div class="human-stat"><span class="human-stat-label">🍖 ${t.hunger}:</span> <span>${(drives.hunger || 0).toFixed(0)}</span></div>
-                    <div class="human-stat"><span class="human-stat-label">💤 ${t.tired}:</span> <span>${(drives.tired || 0).toFixed(0)}</span></div>
-                    <div class="human-stat"><span class="human-stat-label">❄️ ${t.cold}:</span> <span>${(drives.cold || 0).toFixed(0)}</span></div>
-                    <div class="human-stat"><span class="human-stat-label">😱 ${t.fear}:</span> <span>${(drives.fear || 0).toFixed(0)}</span></div>
                 </div>
+                <div class="drive-row"><span>🍖 ${t.hunger}</span><div class="bar"><div class="bar-fill" style="width:${drives.hunger}%; background:${getBarColor(drives.hunger, true)}"></div></div></div>
+                <div class="drive-row"><span>💤 ${t.tired}</span><div class="bar"><div class="bar-fill" style="width:${drives.tired}%; background:${getBarColor(drives.tired, true)}"></div></div></div>
+                <div class="drive-row"><span>❄️ ${t.cold}</span><div class="bar"><div class="bar-fill" style="width:${drives.cold}%; background:${getBarColor(drives.cold, true)}"></div></div></div>
+                <div class="drive-row"><span>😱 ${t.fear}</span><div class="bar"><div class="bar-fill" style="width:${drives.fear}%; background:${getBarColor(drives.fear, true)}"></div></div></div>
                 <div class="human-stats-grid">
                     <div class="human-stat"><span class="human-stat-label">🏹 ล่า:</span> <span>${(skill.hunt || 0).toFixed(0)}</span></div>
                     <div class="human-stat"><span class="human-stat-label">🔥 ไฟ:</span> <span>${(skill.fire || 0).toFixed(0)}</span></div>
@@ -202,7 +220,8 @@ function renderHumans(humans) {
                     <div class="human-stat"><span class="human-stat-label">🔨 ประดิษฐ์:</span> <span>${(skill.craft || 0).toFixed(0)}</span></div>
                 </div>
                 <div class="human-stat"><span class="human-stat-label">${t.emotion}:</span> <span>${h.emotion || '😐'}</span></div>
-                ${h.has_shelter ? `<div style="font-size:11px; color:#4cd964;">🏠 มีที่พักใกล้เคียง</div>` : ''}
+                ${h.has_shelter ? `<div style="font-size:11px; color:#4cd964; margin-bottom:4px;">🏠 มีที่พักใกล้เคียง</div>` : ''}
+                <div style="font-size:10px; color:#888; margin-bottom:4px;">🎒 กระเป๋า: ${h.inventory.join(', ') || 'ว่างเปล่า'}</div>
                 ${h.last_speech ? `<div class="speech-bubble">💬 "${h.last_speech}"</div>` : ''}
                 ${langInfo.vocab_size ? `<div style="margin-top:6px; font-size:10px; color:#4a6080;">📚 คำศัพท์ ${langInfo.vocab_size} คำ | พูด ${langInfo.total_utterances} ครั้ง</div>` : ''}
                 ${topWords.length ? `<div style="margin-top:4px;">${topWords.map(w => `<span class="badge" style="background:#1e2d3d; padding:2px 6px; border-radius:12px; font-size:9px;">${w.form}(${w.uses})</span>`).join(' ')}</div>` : ''}

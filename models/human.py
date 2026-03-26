@@ -95,6 +95,7 @@ class HumanAI:
         }
 
     def decide(self, perception: Dict) -> str:
+        # ส่งค่า has_shelter เข้าไปด้วยเพื่อให้ Brain คำนวณความหนาวได้แม่นยำขึ้น
         action = self.brain.step(perception)
         self.current_action = action
         return action
@@ -404,6 +405,7 @@ class HumanAI:
         return items, stats, invention
 
     def to_dict(self) -> Dict:
+        # เช็คว่ามีที่พักใกล้เคียงไหมสำหรับแสดงผลใน UI
         return {
             "name": self.name,
             "sex": self.sex,
@@ -421,6 +423,8 @@ class HumanAI:
                 "lonely": self.brain.drives.lonely,
                 "bored": self.brain.drives.bored,
             },
+            "skills": self.brain.skill,
             "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
             "last_speech": self.lang.last_utterance_str if hasattr(self.lang, 'last_utterance_str') else "",
+            "has_shelter": False # จะถูกเติมค่าใน World.to_dict หรือ perception
         }

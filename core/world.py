@@ -381,6 +381,12 @@ class World:
         return img
 
     def to_dict(self) -> Dict[str, Any]:
+        human_dicts = []
+        for h in self.humans:
+            d = h.to_dict()
+            d["has_shelter"] = self.shelters.get_nearby_shelter(h.pos) is not None
+            human_dicts.append(d)
+
         return {
             "day": self.day,
             "hour": self.hour,
@@ -388,7 +394,7 @@ class World:
             "temp": self.weather.global_temperature,
             "moisture": self.weather.global_moisture,
             "biomass": self.plants.global_biomass,
-            "humans": [h.to_dict() for h in self.humans],
+            "humans": human_dicts,
             "animals": [a.to_dict() for a in self.animals],
             "fauna": {
                 "rabbit": self.fauna.rabbit_pop,

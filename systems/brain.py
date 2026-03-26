@@ -136,33 +136,39 @@ class DriveSystem:
         self.bored = 30.0
         self.curious = 50.0
 
-    def step(self, temp_c: float, hour: int, partner_dist: int, danger: bool) -> Dict[str, float]:
-        # ลดอัตราการเพิ่ม hunger, thirst, tired เล็กน้อย
-        self.hunger = min(100, self.hunger + 3.0 * self.time_scale)   # จาก 4.0
-        self.thirst = min(100, self.thirst + 4.0 * self.time_scale)   # จาก 5.0
-        self.bladder = min(100, self.bladder + 5.0 * self.time_scale)
-        tired_inc = 3.5 if (6 <= hour < 21) else 5.5                  # ลดลงเล็กน้อย
+    def step(self, temp_c: float, hour: int, partner_dist: int, danger: bool, has_shelter: bool = False) -> Dict[str, float]:
+        # อัตราการเพิ่มความต้องการพื้นฐาน (ปรับสมดุล)
+        self.hunger = min(100, self.hunger + 2.5 * self.time_scale)
+        self.thirst = min(100, self.thirst + 3.5 * self.time_scale)
+        self.bladder = min(100, self.bladder + 4.0 * self.time_scale)
+        
+        # ความเหนื่อยเพิ่มขึ้นตามเวลา (กลางคืนเพิ่มเร็วขึ้น)
+        tired_inc = 3.0 if (6 <= hour < 21) else 6.0
         self.tired = min(100, self.tired + tired_inc * self.time_scale)
-        self.bored = min(100, self.bored + 0.8 * self.time_scale)     # จาก 1.0
-        self.curious = min(100, self.curious + 0.4 * self.time_scale) # จาก 0.5
+        
+        self.bored = min(100, self.bored + 0.5 * self.time_scale)
+        self.curious = min(100, self.curious + 0.3 * self.time_scale)
 
-        # ปรับอัตราการเพิ่ม cold ให้ช้าลง และลด cold เร็วขึ้น
+        # การคำนวณความหนาว (Cold) - ที่พักช่วยลดอัตราการเพิ่มได้ 50%
         if temp_c < 20:
-            # เพิ่ม cold 0.3 ต่อองศาที่ต่ำกว่า 20 ต่อชั่วโมง (เดิม 0.5)
-            self.cold = min(100, self.cold + (20 - temp_c) * 0.3 * self.time_scale)
+            cold_inc = (20 - temp_c) * 0.4 * self.time_scale
+            if has_shelter:
+                cold_inc *= 0.5
+            self.cold = min(100, self.cold + cold_inc)
         else:
-            # ลด cold เร็วขึ้น 5 ต่อชั่วโมง (เดิม 3)
-            self.cold = max(0, self.cold - 5.0 * self.time_scale)
+            self.cold = max(0, self.cold - 6.0 * self.time_scale)
 
-        if partner_dist > 10:
-            self.lonely = min(100, self.lonely + 1.5 * self.time_scale)  # จาก 2.0
+        # ความเหงา (Lonely)
+        if partner_dist > 8:
+            self.lonely = min(100, self.lonely + 1.2 * self.time_scale)
         else:
-            self.lonely = max(0, self.lonely - 1.5 * self.time_scale)    # จาก 1.0
+            self.lonely = max(0, self.lonely - 2.0 * self.time_scale)
 
+        # ความกลัว (Fear)
         if danger:
-            self.fear = min(100, self.fear + 20.0 * self.time_scale)     # จาก 30
+            self.fear = min(100, self.fear + 25.0 * self.time_scale)
         else:
-            self.fear = max(0, self.fear - 6.0 * self.time_scale)        # จาก 5
+            self.fear = max(0, self.fear - 8.0 * self.time_scale)
 
         return {
             "hunger": self.hunger/100,
@@ -220,20 +226,20 @@ class Brain:
 
     def _init_common_sense_weights(self):
         """แปลง common_sense dictionary ให้เป็น base_weights"""
-        self.base_weights = {a: 0.0 for a in ACTIONS}
+        self.base_weights = {a: 1.0 for a in ACTIONS} # เริ่มต้นที่ 1.0 แทน 0.0
         for context, actions in self.common_sense.items():
             for action, value in actions.items():
-                # value คือ bias ที่จะเพิ่มให้ action ในบริบทนั้น
                 if action in self.base_weights:
                     self.base_weights[action] += value
         
-        # normalise เบา ๆ
+        # Normalization ให้สมดุลขึ้น
         if self.base_weights:
-            vals = [abs(v) for v in self.base_weights.values()]
-            max_w = max(vals) if vals else 1
-            if max_w > 0:
-                for a in self.base_weights:
-                    self.base_weights[a] = self.base_weights[a] / max_w * 5   # scale to reasonable range
+            max_w = max(self.base_weights.values())
+            min_w = min(self.base_weights.values())
+            range_w = max_w - min_w if max_w != min_w else 1
+            for a in self.base_weights:
+                # ปรับให้อยู่ในช่วง 0.5 - 5.0
+                self.base_weights[a] = 0.5 + (self.base_weights[a] - min_w) / range_w * 4.5
 
     def step(self, perception: Dict) -> str:
         self.day += 1
@@ -244,11 +250,17 @@ class Brain:
             danger=perception.get("danger",False),
         )
         if perception.get("partner_dist",99) <= 3:
-            self.emotion.update("partner_near",0.05)
-        elif perception.get("partner_dist",99) > 15:
-            self.emotion.update("alone",0.02)
+            self.emotion.update("partner_near", 0.08)
+            if perception.get("partner_sleeping"):
+                self.emotion.update("ate_well", 0.02) # Feeling safe
+        elif perception.get("partner_dist",99) > 20:
+            self.emotion.update("alone", 0.05)
+            
         if perception.get("danger"):
-            self.emotion.update("danger",0.2)
+            self.emotion.update("danger", 0.3)
+            
+        if perception.get("has_shelter") and perception.get("is_night"):
+            self.emotion.update("ate_well", 0.05) # Shelter comfort
 
         ctx = []
         if pain["hunger"]>0.5: ctx.append("hungry")
