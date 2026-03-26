@@ -2,8 +2,8 @@
 // สำหรับแสดงผลโลก Pangea ในรูปแบบ Isometric (45 องศา) พร้อมตัวละคร Pixel Art
 
 let ws = null;
-let canvas = document.getElementById('map-canvas');
-let ctx = canvas.getContext('2d');
+let canvas = null;
+let ctx = null;
 let lastState = null;
 let gameOver = false;
 
@@ -298,6 +298,13 @@ function addLog(msg) {
 let frame = 0;
 function drawLoop() {
     frame++;
+    if (!canvas) canvas = document.getElementById('map-canvas');
+    if (!canvas) {
+        requestAnimationFrame(drawLoop);
+        return;
+    }
+    if (!ctx) ctx = canvas.getContext('2d');
+    
     if (!lastState || !lastState.map) {
         requestAnimationFrame(drawLoop);
         return;
@@ -310,8 +317,10 @@ function drawLoop() {
 
     // Resize Canvas
     const container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+    if (container) {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = false;
