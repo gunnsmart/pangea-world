@@ -395,6 +395,7 @@ class World:
             "moisture": self.weather.global_moisture,
             "biomass": self.plants.global_biomass,
             "humans": human_dicts,
+            "shelters": [s.to_dict() for s in self.shelters.shelters],
             "animals": [a.to_dict() for a in self.animals],
             "fauna": {
                 "rabbit": self.fauna.rabbit_pop,
