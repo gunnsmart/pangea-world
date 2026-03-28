@@ -5,40 +5,83 @@ import pickle
 import threading
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-
-try:
-    import psycopg2
-    import psycopg2.extras
-    HAS_PG = True
-except ImportError:
-    HAS_PG = False
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
 
 TZ_THAI = timezone(timedelta(hours=7))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-_conn_lock = threading.Lock()
-_conn = None
+_pool = None
+_pool_lock = threading.Lock()
+
+def _get_pool():
+    global _pool
+    if not DATABASE_URL:
+        return None
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                try:
+                    _pool = psycopg2.pool.ThreadedConnectionPool(
+                        minconn=1,
+                        maxconn=5,
+                        dsn=DATABASE_URL,
+                        sslmode="require"
+                    )
+                except Exception as e:
+                    print(f"[DB] Failed to create connection pool: {e}")
+                    return None
+    return _pool
 
 def get_conn():
-    global _conn
-    if not HAS_PG or not DATABASE_URL:
+    """Get a connection from pool (must call return_conn after use)"""
+    pool = _get_pool()
+    if pool is None:
         return None
-    with _conn_lock:
-        try:
-            if _conn is None or _conn.closed:
-                _conn = psycopg2.connect(DATABASE_URL, sslmode="require")
-                _conn.autocommit = False
-            return _conn
-        except Exception as e:
-            print(f"[DB] Connection error: {e}")
-            return None
+    try:
+        conn = pool.getconn()
+        # Ensure autocommit is off for transaction control
+        conn.autocommit = False
+        return conn
+    except Exception as e:
+        print(f"[DB] get_conn error: {e}")
+        return None
 
-def init_db() -> bool:
+def return_conn(conn):
+    """Return connection to pool"""
+    pool = _get_pool()
+    if pool and conn:
+        pool.putconn(conn)
+
+def execute_with_conn(func, *args, **kwargs):
+    """
+    Execute a function that uses a database connection.
+    Automatically handles commit/rollback and returns connection to pool.
+    """
     conn = get_conn()
     if not conn:
-        print("[DB] No connection — running without persistence")
-        return False
+        return None
     try:
+        result = func(conn, *args, **kwargs)
+        conn.commit()
+        return result
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"[DB] execute_with_conn error: {e}")
+        raise
+    finally:
+        if conn:
+            return_conn(conn)
+
+def init_db() -> bool:
+    """Create tables if not exist"""
+    if not DATABASE_URL:
+        print("[DB] No DATABASE_URL - persistence disabled")
+        return False
+
+    def _init(conn):
         with conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS sim_snapshots (
@@ -69,43 +112,45 @@ def init_db() -> bool:
                     recorded_at TIMESTAMPTZ DEFAULT NOW()
                 );
             """)
-        conn.commit()
-        print("[DB] ✅ Tables ready")
         return True
+
+    try:
+        return execute_with_conn(_init)
     except Exception as e:
-        print(f"[DB] Schema error: {e}")
-        conn.rollback()
+        print(f"[DB] init_db error: {e}")
         return False
 
 def save_snapshot(sim_day: int, state_dict: dict, humans: list = None) -> bool:
-    conn = get_conn()
-    if not conn:
+    if not DATABASE_URL:
         return False
-    try:
-        state_json = json.dumps(state_dict, ensure_ascii=False)
-        human_pkl = pickle.dumps(humans) if humans else None
+    state_json = json.dumps(state_dict, ensure_ascii=False)
+    human_pkl = pickle.dumps(humans) if humans else None
+
+    def _save(conn):
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO sim_snapshots (sim_day, state_json, human_pkl)
                 VALUES (%s, %s, %s)
             """, (sim_day, state_json, psycopg2.Binary(human_pkl) if human_pkl else None))
+            # Keep only latest 100 snapshots
             cur.execute("""
                 DELETE FROM sim_snapshots WHERE id NOT IN (
                     SELECT id FROM sim_snapshots ORDER BY saved_at DESC LIMIT 100
                 )
             """)
-        conn.commit()
         return True
+
+    try:
+        return execute_with_conn(_save)
     except Exception as e:
         print(f"[DB] save_snapshot error: {e}")
-        conn.rollback()
         return False
 
 def load_latest_snapshot() -> Optional[dict]:
-    conn = get_conn()
-    if not conn:
+    if not DATABASE_URL:
         return None
-    try:
+
+    def _load(conn):
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute("""
                 SELECT sim_day, state_json, human_pkl, saved_at
@@ -120,15 +165,18 @@ def load_latest_snapshot() -> Optional[dict]:
                 "humans": pickle.loads(bytes(row["human_pkl"])) if row["human_pkl"] else None,
                 "saved_at": row["saved_at"],
             }
+
+    try:
+        return execute_with_conn(_load)
     except Exception as e:
         print(f"[DB] load_snapshot error: {e}")
         return None
 
 def record_timeseries(sim_day: int, fauna, biomass: float, co2: float, temp: float, human_pop: int):
-    conn = get_conn()
-    if not conn:
+    if not DATABASE_URL:
         return
-    try:
+
+    def _record(conn):
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO time_series (sim_day, rabbit_pop, deer_pop, tiger_pop,
@@ -136,7 +184,9 @@ def record_timeseries(sim_day: int, fauna, biomass: float, co2: float, temp: flo
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             """, (sim_day, fauna.rabbit_pop, fauna.deer_pop, fauna.tiger_pop,
                   human_pop, biomass, co2, temp))
-        conn.commit()
+        return True
+
+    try:
+        execute_with_conn(_record)
     except Exception as e:
         print(f"[DB] timeseries error: {e}")
-        conn.rollback()

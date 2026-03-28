@@ -2,7 +2,7 @@
 # ค่าคงที่ของระบบทั้งหมด
 
 # Simulation timing
-SIM_STEP_INTERVAL = 1.0       # วินาทีจริงต่อ 1 ชั่วโมง sim
+SIM_STEP_INTERVAL = 0.2       # วินาทีจริงต่อ 1 ชั่วโมง sim (5x Speed)
 MAX_CATCHUP = 24              # step ต่อเฟรมสูงสุด (ป้องกัน lag)
 
 # World

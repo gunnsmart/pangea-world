@@ -2,81 +2,71 @@ import asyncio
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from core.world import World
+from core.session_manager import session_manager
 from ui.websocket_manager import WebSocketManager
 
 app = FastAPI()
-world = World()
-ws_manager = WebSocketManager()
 
-# Subscribe to event bus for logs and dialogues
-def on_log(msg: str):
-    ws_manager.broadcast({"type": "log", "data": msg})
-world.event_bus.on("log", on_log)
+# Global static mount
+app.mount("/static", StaticFiles(directory="ui/static"), name="static")
 
-def on_dialogue(utterance):
-    ws_manager.broadcast({"type": "dialogue", "data": utterance})
-world.event_bus.on("dialogue", on_dialogue)
+@app.get("/")
+async def index():
+    return FileResponse("ui/static/index.html")
 
-# Store last snapshot for delta endpoint
-last_snapshot = None
+@app.post("/api/session")
+async def create_session():
+    """Create a new simulation session."""
+    session_id = session_manager.create_session()
+    return {"session_id": session_id}
 
-# Register world snapshot listener (for full snapshot)
-def on_world_update(snapshot):
-    global last_snapshot
-    last_snapshot = snapshot
-    ws_manager.broadcast(snapshot)
-world.listeners.append(on_world_update)
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    world = session_manager.get_world(session_id)
+    if not world:
+        await websocket.close(code=1008, reason="Invalid session")
+        return
 
-world.start()
+    # Create a WebSocketManager for this session
+    ws_mgr = WebSocketManager()
+    await ws_mgr.connect(websocket)
 
-# Background task to broadcast full state every 2 seconds (in case delta not used)
-async def periodic_broadcast():
-    while True:
-        await asyncio.sleep(2.0)
-        if last_snapshot:
-            ws_manager.broadcast(last_snapshot)
+    def on_snapshot(snapshot):
+        ws_mgr.broadcast(snapshot)
 
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(periodic_broadcast())
+    # Register listener to the world
+    world.listeners.append(on_snapshot)
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await ws_manager.connect(websocket)
     try:
+        # Keep connection alive, handle client commands if any
         while True:
-            # Keep connection alive, handle client messages if any
+            # We can receive commands from client via WebSocket
             data = await websocket.receive_text()
-            # Optionally handle client commands via WebSocket
-            # For now, ignore
+            # For now, we just keep it alive
     except Exception:
-        ws_manager.disconnect(websocket)
+        # On disconnect, remove listener
+        if on_snapshot in world.listeners:
+            world.listeners.remove(on_snapshot)
+        ws_mgr.disconnect(websocket)
 
-@app.get("/api/state")
-def get_state():
-    """Return full world snapshot."""
+@app.get("/api/state/{session_id}")
+async def get_state(session_id: str):
+    """Return full world snapshot for a specific session."""
+    world = session_manager.get_world(session_id)
+    if not world:
+        return {"error": "Invalid session"}, 404
     return world.to_dict()
 
-@app.get("/api/state/delta")
-def get_state_delta(last_day: int = -1):
-    """Delta endpoint: returns full if day changed, else partial (currently just returns full for simplicity)."""
-    # For simplicity, return full state. In a more advanced version, compute diff.
-    # But we'll keep it simple; frontend can handle full updates.
-    return {"type": "full", "data": world.to_dict()}
-
-@app.post("/api/command/{cmd}")
-def command(cmd: str):
+@app.post("/api/command/{session_id}/{cmd}")
+async def command(session_id: str, cmd: str):
+    world = session_manager.get_world(session_id)
+    if not world:
+        return {"error": "Invalid session"}, 404
+        
     if cmd == "pause":
         world.paused = True
     elif cmd == "start":
         world.paused = False
     elif cmd == "reset":
-        # Reinitialize world
-        world.reset()  # Implement reset method in World class
+        world.reset()
     return {"ok": True}
-
-app.mount("/static", StaticFiles(directory="ui/static"), name="static")
-@app.get("/")
-async def index():
-    return FileResponse("ui/static/index.html")
