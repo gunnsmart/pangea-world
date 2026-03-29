@@ -4,8 +4,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from core.session_manager import session_manager
 from ui.websocket_manager import WebSocketManager
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global static mount
 app.mount("/static", StaticFiles(directory="ui/static"), name="static")
