@@ -7,14 +7,23 @@ from systems.senses import VisionSystem, SoundSystem
 from systems.memory import LongTermMemory
 from systems.language import ProtoLanguage
 from materials import STONE, WOOD, FIBER, LEAF
-from item import create_item, Item
-from crafting import generate_item_name
+from item import create_item
+
+INTENT_BY_ACTION = {
+    "eat_raw": "food", "eat_cooked": "food", "seek_food": "food", "cook": "food",
+    "drink": "hunger", "flee": "fear",
+    "start_fire": "fire", "tend_fire": "fire", "rub": "fire", "seek_fire": "cold",
+    "build_shelter": "cold",
+    "mate": "mate", "comfort": "lonely", "share_food": "food", "seek_partner": "lonely",
+    "sleep": "tired", "rest": "tired",
+}
 
 class HumanAI:
-    def __init__(self, name: str, height: float, mass: float, partner_name: str, time_scale: float = 1.0):
+    def __init__(self, name: str, height: float, mass: float, partner_name: str,
+                 time_scale: float = 1.0, sex: str = None):
         self.name = name
         self.partner_name = partner_name
-        self.sex = "M" if name == "Adam" else "F"
+        self.sex = sex or ("M" if name == "Adam" else "F")
         self.body = Body(name, self.sex, mass, height)
         
         # กำหนดฐานความรู้พื้นฐานสำหรับผู้ใหญ่ (Common Sense)
@@ -45,9 +54,16 @@ class HumanAI:
         self.inventory = random.sample(base_items, 3)
         self.current_action = "idle"
         self.sleeping = False
-        self.pos = np.array([50.0, 50.0, 0.0])
         self.visible = []
         self.sounds = []
+
+    @property
+    def pos(self):
+        return self.body.position
+
+    @pos.setter
+    def pos(self, value):
+        self.body.position = np.array(value, dtype=float)
 
     @property
     def health(self):
@@ -71,6 +87,8 @@ class HumanAI:
         vision_dict = self.vision.to_perception_dict(self.visible, self.ltm, self.pos, world.day)
         sound_dict = self.hearing.to_perception(self.sounds)
 
+        inv = self.inventory
+        hard_count = sum(1 for i in inv if hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 5)
         return {
             "temp_c": world.weather.global_temperature,
             "hour": world.hour,
@@ -89,7 +107,33 @@ class HumanAI:
             "has_cooked_food": len(world.fires.cooked_foods) > 0,
             "biome_food": info["food_level"],
             "is_night": world.hour >= 21 or world.hour < 6,
-            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
+            "can_rub": hard_count >= 2,
+            "has_flint": any(hasattr(i, 'attrs') and i.attrs.get("hardness", 0) >= 7 for i in inv),
+            "has_wood_item": any(hasattr(i, 'material') and i.material.template.name == "wood" for i in inv),
+            "has_leaf_item": any(hasattr(i, 'material') and i.material.template.name == "leaf" for i in inv),
+            "has_any_item": len(inv) > 0,
+            "health": self.body.health,
+            "energy": max(0, min(100, self.body.u_energy / 20)),
+            "moisture": world.weather.global_moisture,
+            "sleeping": self.sleeping,
+            "age_years": self.body.age_years,
+            "pregnant": self.body.pregnant,
+            "gestation": min(100, self.body.days_pregnant / 280 * 100),
+            "hormones": {
+                "cortisol": self.body.hormone.cortisol,
+                "oxytocin": self.body.hormone.oxytocin,
+                "testosterone": self.body.hormone.testosterone,
+                "estrogen": self.body.hormone.estrogen,
+                "progesterone": self.body.hormone.progesterone,
+            },
+            "emotion_state": {
+                "valence": (self.brain.emotion.valence + 1) / 2,
+                "arousal": self.brain.emotion.arousal,
+                "trust": self.brain.emotion.trust,
+                "dominance": self.brain.emotion.dominance,
+            },
+            "vocabulary": [w.form for w in self.lang.lexicon.values()],
+            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in inv ],
             **vision_dict,
             **sound_dict,
         }
@@ -171,13 +215,15 @@ class HumanAI:
                 self.brain.receive_pleasure("water", 0.5)
             else:
                 target = None
-                for dr in range(-8,9):
-                    for dc in range(-8,9):
-                        r2 = max(0, min(world.terrain.size-1, int(self.pos[0])+dr))
-                        c2 = max(0, min(world.terrain.size-1, int(self.pos[1])+dc))
-                        if world.terrain.template[r2][c2] in [0,1]:
-                            target = [r2,c2]
-                            break
+                for radius in (8, 15, 25):
+                    for dr in range(-radius, radius+1):
+                        if target: break
+                        for dc in range(-radius, radius+1):
+                            r2 = max(0, min(world.terrain.size-1, int(self.pos[0])+dr))
+                            c2 = max(0, min(world.terrain.size-1, int(self.pos[1])+dc))
+                            if world.terrain.template[r2][c2] in [0,1]:
+                                target = [r2,c2]
+                                break
                     if target: break
                 if target:
                     direction = np.array([target[0]-self.pos[0], target[1]-self.pos[1], 0.0])
@@ -193,10 +239,9 @@ class HumanAI:
         # ========== START FIRE ==========
         elif action == "start_fire" and not self.sleeping:
             # Check for flint and wood in inventory (old style check) or materials
-            has_flint = any(isinstance(i, str) and "หินเหล็กไฟ" in i for i in self.inventory) or \
-                        any(hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 7 and i.attrs.get("sharp", 0) > 5 for i in self.inventory)
+            has_flint = any(hasattr(i, 'attrs') and i.attrs.get("hardness", 0) >= 7 for i in self.inventory)
             has_wood = any(isinstance(i, str) and "กิ่งไม้แห้ง" in i for i in self.inventory) or \
-                       any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 7 for i in self.inventory)
+                        any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 7 for i in self.inventory)
             
             if has_flint and has_wood:
                 campfire = world.fires.start_fire([int(self.pos[0]), int(self.pos[1])], fuel_kg=3.0)
@@ -206,6 +251,7 @@ class HumanAI:
                     self.brain.drives.relieve("cold", 40)
                     self.brain.receive_pleasure("warmth", 1.0)
                 else:
+                    campfire.fuel_kg = 0
                     self.brain.receive_pain("failure", 0.2)
 
         # ========== COOK / TEND FIRE ==========
@@ -220,7 +266,9 @@ class HumanAI:
                         self.brain.receive_pleasure("cooked_food", 0.8)
                         world.event_bus.emit("log", f"🍖 {self.name} ปรุง {food_choice} สำเร็จ")
                 else:  # tend_fire
-                    if "กิ่งไม้แห้ง" in self.inventory:
+                    wood = next((i for i in self.inventory
+                                 if hasattr(i, 'material') and i.material.template.name == "wood"), None)
+                    if wood:
                         near.add_fuel(2.0)
 
         # ========== GATHER ==========
@@ -271,27 +319,31 @@ class HumanAI:
                 if can_ignite(heat, stone_a.material) or can_ignite(heat, stone_b.material):
                     # จุดไฟสำเร็จ
                     fire = world.fires.start_fire(self.pos[:2].tolist(), fuel_kg=2.0)
-                    fire.ignite(world.weather.global_moisture/100, True)
-                    world.event_bus.emit("log", f"🔥 {self.name} จุดไฟสำเร็จด้วยการขัดสีหิน!")
-                    self.brain.receive_pleasure("warmth", 1.0)
+                    ignited, _ = fire.ignite(world.weather.global_moisture/100, True)
+                    if not ignited:
+                        fire.fuel_kg = 0
+                    else:
+                        world.event_bus.emit("log", f"🔥 {self.name} จุดไฟสำเร็จด้วยการขัดสีหิน!")
+                        self.brain.receive_pleasure("warmth", 1.0)
                 else:
                     world.event_bus.emit("log", f"🪨 {self.name} ขัดสีหินแต่ยังไม่เกิดไฟ")
                     self.brain.receive_pain("failure", 0.1)
 
         # ========== SHARE FOOD ==========
         elif action == "share_food" and not self.sleeping:
-            if np.linalg.norm(self.pos - partner.pos) <= 3:
-                # หาอาหารใน inventory
-                food_items = [i for i in self.inventory if hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 0]
-                if food_items:
-                    food = food_items[0]
-                    self.inventory.remove(food)
-                    partner.inventory.append(food)
+            if np.linalg.norm(self.pos - partner.pos) <= 3 and not partner.sleeping:
+                if world.fires.cooked_foods:
+                    food = world.fires.cooked_foods.pop(0)
+                    half = food["kcal"] / 2
+                    self.body.u_energy = min(2000, self.body.u_energy + half)
+                    partner.body.u_energy = min(2000, partner.body.u_energy + half)
+                    self.brain.drives.relieve("hunger", 35)
+                    partner.brain.drives.relieve("hunger", 35)
                     self.brain.receive_pleasure("sharing", 0.5)
-                    partner.brain.receive_pleasure("received_food", 0.5)
-                    world.event_bus.emit("log", f"🤝 {self.name} แบ่งปัน {food.material.template.name} ให้ {partner.name}")
+                    partner.brain.receive_pleasure("received_food", 0.8)
+                    world.event_bus.emit("log", f"🤝 {self.name} แบ่ง{food['name']}ให้ {partner.name}")
                 else:
-                    world.event_bus.emit("log", f"❓ {self.name} พยายามแบ่งอาหารแต่ไม่มีของ")
+                    world.event_bus.emit("log", f"❓ {self.name} อยากแบ่งอาหารแต่ไม่มี")
 
         # ========== MATE ==========
         elif action == "mate" and not self.sleeping:
@@ -381,10 +433,22 @@ class HumanAI:
         if hasattr(self.body, 'velocity'):
             self.body.velocity[0] += direction[0] * speed
             self.body.velocity[1] += direction[1] * speed
+            horiz = np.linalg.norm(self.body.velocity[:2])
+            if horiz > 2.0:
+                scale = 2.0 / horiz
+                self.body.velocity[0] *= scale
+                self.body.velocity[1] *= scale
         else:
             # Fallback to acceleration if velocity is not present
             force = direction * speed * 5.0
             self.body.acceleration += force
+
+    def communicate(self, action: str, partner):
+        intent = INTENT_BY_ACTION.get(action)
+        if not intent:
+            return None
+        dist = int(np.linalg.norm(self.pos - partner.pos))
+        return self.lang.speak(intent, self.brain.current_context, self.brain.day, partner_dist=dist)
 
     def update_physics(self, terrain_elevation: float):
         self.body.physics_step(terrain_elevation)
@@ -393,19 +457,24 @@ class HumanAI:
         if self.sleeping or len(self.inventory) < 2:
             return None, None, None
         items = random.sample(self.inventory, 2)
+        names = [(i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in items]
         stats = {"hardness": 1}
-        if "หิน" in items[0] and "ไม้" in items[1]:
+        if "stone" in names and "wood" in names:
             invention = {"name": "ขวานหิน", "use": "ตัดไม้ ล่าสัตว์"}
-        elif "เถาวัลย์" in items[0] or "เถาวัลย์" in items[1]:
+        elif "fiber" in names:
             invention = {"name": "เชือก", "use": "ผูกมัด"}
-        elif "ใบไม้" in items[0] or "ใบไม้" in items[1]:
+        elif "leaf" in names:
             invention = {"name": "เครื่องนุ่งห่ม", "use": "กันหนาว"}
         else:
-            invention = {"name": f"{items[0]}+{items[1]}", "use": "ไม่ทราบ"}
-        return items, stats, invention
+            invention = {"name": f"{names[0]}+{names[1]}", "use": "ไม่ทราบ"}
+        return names, stats, invention
 
     def to_dict(self) -> Dict:
         # เช็คว่ามีที่พักใกล้เคียงไหมสำหรับแสดงผลใน UI
+        inv_counts: Dict[str, int] = {}
+        for i in self.inventory:
+            key = i.material.template.name if hasattr(i, 'material') else str(i)
+            inv_counts[key] = inv_counts.get(key, 0) + 1
         return {
             "name": self.name,
             "sex": self.sex,
@@ -417,14 +486,39 @@ class HumanAI:
             "emotion": self.brain.emotion.label,
             "drives": {
                 "hunger": self.brain.drives.hunger,
+                "thirst": self.brain.drives.thirst,
                 "tired": self.brain.drives.tired,
                 "cold": self.brain.drives.cold,
                 "fear": self.brain.drives.fear,
                 "lonely": self.brain.drives.lonely,
                 "bored": self.brain.drives.bored,
+                "bladder": self.brain.drives.bladder,
             },
+            "hormones": {
+                "testosterone": self.body.hormone.testosterone,
+                "estrogen": self.body.hormone.estrogen,
+                "progesterone": self.body.hormone.progesterone,
+                "cortisol": self.body.hormone.cortisol,
+                "oxytocin": self.body.hormone.oxytocin,
+            },
+            "energy": max(0, min(100, self.body.u_energy / 20)),
+            "weight": self.body.mass,
+            "height_m": self.body.height / 100,
+            "body_temp": 36.6,
+            "pregnant": self.body.pregnant,
+            "gestation": min(100, self.body.days_pregnant / 280 * 100),
+            "fertile": self.body.is_fertile,
+            "menopause": self.body.menopause,
+            "total_births": self.body.total_births,
+            "diseases": list(self.body.diseases),
+            "joy": max(0, min(100, 50 + self.brain.emotion.valence * 50)),
             "skills": self.brain.skill,
-            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
+            "neural_modules": self.brain.neural.get_modules() if getattr(self.brain, "neural", False) else None,
+            "vocabulary": [w.form for w in self.lang.lexicon.values()],
+            "vocab_size": len(self.lang.lexicon),
             "last_speech": self.lang.last_utterance_str if hasattr(self.lang, 'last_utterance_str') else "",
+            "action_log": list(self.brain.action_log[-12:]),
+            "inventory": [ (i.name if hasattr(i, 'name') else i.material.template.name) if hasattr(i, 'material') else str(i) for i in self.inventory ],
+            "inventory_counts": inv_counts,
             "has_shelter": False # จะถูกเติมค่าใน World.to_dict หรือ perception
         }

@@ -4,9 +4,9 @@ import time
 import numpy as np
 import random
 from typing import Callable, List, Dict, Any, Set
-from utils.config import MAP_SIZE, SIM_STEP_INTERVAL, MAX_CATCHUP
+from utils.config import MAP_SIZE, SIM_STEP_INTERVAL, MAX_CATCHUP, MAX_HUMANS
 from models.terrain import TerrainMap
-from models.environment import WeatherSystem, DisasterSystem
+from models.environment import WeatherSystem, DisasterSystem, get_season
 from models.plant import PlantEcosystem
 from models.animal import Animal, spawn_wildlife
 from models.human import HumanAI
@@ -39,7 +39,25 @@ class World:
         self.event_bus = EventBus()
         self.dead: Set[str] = set()
         self.game_over = False
+        self._child_counter = 0
+        self.kpis = {"tickDuration": 0.0, "snapshotSize": 0, "fallbackCount": 0,
+                     "timeoutRate": 0.0, "queueDepth": 0, "spikeSparsity": 0.0,
+                     "taskLatencyP50": 0.0, "taskLatencyP95": 0.0,
+                     "plasticityMagnitude": 0.0, "eventLossCount": 0,
+                     "lockstepWaitTime": 0.0}
         self._setup_initial_positions()
+
+        try:
+            from persistence.database import load_lexicon
+            from systems.language import Word
+            for entry in load_lexicon():
+                for h in self.humans:
+                    if entry["speaker"] == h.name and entry["word"] not in h.lang.lexicon:
+                        w_obj = Word(form=entry["word"], meaning=entry["meaning"],
+                                     invented_by=entry["speaker"], uses=entry.get("uses", 1))
+                        h.lang.lexicon[entry["word"]] = w_obj
+        except Exception:
+            pass
 
         self.running = True
         self.paused = False
@@ -71,8 +89,11 @@ class World:
                 steps = min(steps, MAX_CATCHUP)
                 if steps:
                     accumulated -= steps * SIM_STEP_INTERVAL
+                    t0 = time.monotonic()
                     for _ in range(steps):
                         self._update_hour()
+                    self.kpis["tickDuration"] = round((time.monotonic() - t0) / max(1, steps) * 1000, 2)
+                    if self.listeners:
                         self._notify_listeners()
             time.sleep(0.01)
 
@@ -117,9 +138,28 @@ class World:
         hunted = self.humansys.step_day(self.plants.global_biomass, self.fauna.deer_pop)
         self.fauna.deer_pop = max(0, self.fauna.deer_pop - hunted)
 
+        # Daily biology (aging, pregnancy, metabolism, disease, death)
+        for h in self.humans:
+            if not h.body.alive:
+                continue
+            partner = self._partner_of(h)
+            body_events = h.body.step_day(
+                calories_in=800 if h.brain.drives.hunger < 60 else 200,
+                is_active=not h.sleeping,
+                stressed=(h.brain.drives.hunger >= 85),
+                bonded=(np.linalg.norm(h.pos - partner.pos) <= 3)
+            )
+            for ev in body_events:
+                if "เสียชีวิต" not in ev:
+                    self.event_bus.emit("log", ev)
+            newborn = h.body.pending_newborn
+            h.body.pending_newborn = None
+            if newborn:
+                self._handle_newborn(h, newborn["survived"])
+
         # Save snapshot and timeseries
         try:
-            from persistence.database import save_snapshot, record_timeseries
+            from persistence.database import save_snapshot, record_timeseries, save_lexicon
             state_dict = {
                 "day": self.day,
                 "weather_day": self.weather.day,
@@ -135,6 +175,12 @@ class World:
             record_timeseries(self.day, self.fauna, self.plants.global_biomass,
                               self.physics.atmo.co2_ppm, self.weather.global_temperature,
                               self.humansys.human_pop)
+            entries = []
+            for h in self.humans:
+                for word in h.lang.lexicon.values():
+                    entries.append({"word": word.form, "meaning": word.meaning,
+                                    "speaker": word.invented_by or h.name, "uses": word.uses})
+            save_lexicon(entries)
         except Exception as e:
             print(f"[DB] persistence error: {e}")
 
@@ -153,9 +199,11 @@ class World:
         for h in self.humans:
             if not h.body.alive:
                 continue
-            partner = self.humans[1] if h.name == "Adam" else self.humans[0]
+            partner = self._partner_of(h)
             perception = h.perceive(self, partner)
             action = h.decide(perception)
+            if h.sleeping:
+                action = "sleep"
             h.current_action = action
 
             # Record drives before action to compute outcome
@@ -172,20 +220,18 @@ class World:
             outcome = max(-1, min(1, outcome))
             h.brain.learn(action, outcome)
 
+            # Language emergence
+            utterance = h.communicate(action, partner)
+            if utterance and np.linalg.norm(h.pos - partner.pos) <= 15:
+                learned = partner.lang.hear(utterance, h.brain.current_context)
+                if learned:
+                    self.event_bus.emit("log",
+                        f"🗣 {partner.name} เรียนรู้คำ '{' '.join(learned)}' จาก {h.name}")
+
             # Physics
             biome = self.terrain.template[int(h.pos[0])][int(h.pos[1])]
             elev = self.terrain.get_elevation(biome)
             h.update_physics(elev)
-
-            # Body step
-            body_events = h.body.step_day(
-                calories_in=800 if h.brain.drives.hunger < 60 else 200,
-                is_active=not h.sleeping,
-                stressed=(h.brain.drives.hunger >= 85),
-                bonded=(np.linalg.norm(h.pos - partner.pos) <= 3)
-            )
-            for ev in body_events:
-                self.event_bus.emit("log", ev)
 
             # Pain/pleasure signals
             if h.body.health < 50:
@@ -237,15 +283,18 @@ class World:
             if h.sleeping and 6 <= self.hour < 21 and h.brain.drives.tired < 30:
                 h.sleeping = False
                 h.brain.receive_pleasure("rest", 0.5)
+                h.brain.dream_consolidation()
                 self.event_bus.emit("log", f"🌅 {h.name} ตื่นนอน")
 
             # Death check
             if not h.body.alive and h.name not in self.dead:
                 self.dead.add(h.name)
                 self.event_bus.emit("log", f"💀 {h.name} เสียชีวิต (อายุ {h.body.age_years:.1f} ปี)")
-                if len(self.dead) >= 2:
+                if len(self.dead) >= len(self.humans):
                     self.game_over = True
                     self.event_bus.emit("log", "🌑 สายพันธุ์มนุษย์สูญพันธุ์")
+
+        self.humansys.human_pop = sum(1 for h in self.humans if h.body.alive)
 
         # Animals
         new_animals = []
@@ -309,6 +358,33 @@ class World:
             self.event_bus.emit("log", ev)
 
         self.invalidate()
+
+    def _partner_of(self, h):
+        best, best_dist = h, float('inf')
+        for other in self.humans:
+            if other is h or not other.body.alive:
+                continue
+            d = np.linalg.norm(other.pos - h.pos)
+            if d < best_dist:
+                best, best_dist = other, d
+        return best
+
+    def _handle_newborn(self, mother, survived: bool):
+        if not survived:
+            return
+        if len(self.humans) >= MAX_HUMANS:
+            self.event_bus.emit("log", "👶 ทารกเกิดแต่ชุมชนใหญ่เกินจึงไม่ถูกนับ")
+            return
+        self._child_counter += 1
+        name = f"Child{self._child_counter}"
+        sex = random.choice(["M", "F"])
+        child = HumanAI(name, height=50.0, mass=3.5, partner_name="",
+                        time_scale=1.0, sex=sex)
+        child.body.cycle_day = random.randint(1, 28)
+        child.pos = np.array([mother.pos[0] + random.uniform(-1, 1),
+                              mother.pos[1] + random.uniform(-1, 1), 0.0])
+        self.humans.append(child)
+        self.event_bus.emit("log", f"👶 {name} ({'ชาย' if sex == 'M' else 'หญิง'}) เข้าร่วมชีวิตใหม่!")
 
     def _notify_listeners(self):
         snapshot = self.to_dict()
@@ -387,14 +463,23 @@ class World:
             d["has_shelter"] = self.shelters.get_nearby_shelter(h.pos) is not None
             human_dicts.append(d)
 
+        veg = self.terrain.vegetation
+        avg_veg = sum(sum(row) for row in veg) / max(1, len(veg) * len(veg[0]))
+
         return {
             "day": self.day,
             "hour": self.hour,
+            "minute": 0,
             "game_over": self.game_over,  # ✅ เพิ่ม game_over flag
             "weather": self.weather.current_state,
+            "season": get_season(self.day)["label"],
             "temp": self.weather.global_temperature,
             "moisture": self.weather.global_moisture,
             "biomass": self.plants.global_biomass,
+            "light_level": self._brightness(self.hour),
+            "avg_fertility": min(1.0, avg_veg / 50),
+            "biomes": [row[:] for row in self.terrain.template],
+            "veg": [[min(9, int(v / 10)) for v in row] for row in veg],
             "humans": human_dicts,
             "animals": [a.to_dict() for a in self.animals],
             "fauna": {
@@ -409,6 +494,7 @@ class World:
             "fires": [f.to_dict() for f in self.fires.active_fires],
             "shelters": [{"pos": s.pos, "durability": s.durability} for s in self.shelters.shelters],
             "history": self.event_bus.get_logs(30),
+            "kpis": getattr(self, "kpis", None),
             "map": self._build_map(),
         }
 
@@ -418,10 +504,12 @@ class World:
         self.running = False
         if self.sim_thread.is_alive():
             self.sim_thread.join(timeout=2)
-        
+
+        preserved_listeners = list(self.listeners)
         # เรียก __init__ ใหม่
         self.__init__()
-        
+        self.listeners = preserved_listeners
+
         # เริ่ม thread ใหม่
         self.start()
 

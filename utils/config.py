@@ -63,3 +63,6 @@ VISION_RADIUS_FIRE = 6
 
 # Sound
 SOUND_RADIUS = 12
+
+# Population caps
+MAX_HUMANS = 8

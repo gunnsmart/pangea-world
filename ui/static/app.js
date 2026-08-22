@@ -141,7 +141,10 @@ function renderFull(state) {
     document.getElementById('s-temp').innerText = state.temp;
     document.getElementById('s-moisture').innerText = state.moisture;
     document.getElementById('s-biomass').innerText = state.biomass.toFixed(1);
-    document.getElementById('s-season').innerText = state.season || 'Spring';
+    document.getElementById('s-season').innerText = state.season || '--';
+
+    renderLog(state.history || []);
+    renderEco(state);
 
     if (state.fauna) {
         document.getElementById('s-rabbit').innerText = state.fauna.rabbit;
@@ -215,6 +218,42 @@ function addLog(msg) {
     while (container.children.length > 50) container.removeChild(container.lastChild);
 }
 
+function renderLog(history) {
+    const container = document.getElementById('log-list');
+    if (!container || !Array.isArray(history)) return;
+    container.innerHTML = '';
+    for (const msg of history.slice().reverse()) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry'; entry.textContent = msg;
+        container.appendChild(entry);
+    }
+}
+
+function renderEco(state) {
+    const atmoGrid = document.getElementById('atmo-grid');
+    if (atmoGrid && state.atmosphere) {
+        atmoGrid.innerHTML = Object.entries(state.atmosphere)
+            .map(([k, v]) => `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join('');
+    }
+
+    const disasterSection = document.getElementById('disaster-section');
+    if (disasterSection) {
+        const disasters = state.disasters || [];
+        disasterSection.innerHTML = disasters.length
+            ? `<div class="stat-card"><h3>⚠️ ภัยพิบัติ</h3>` + disasters.map(d =>
+                `<div class="metric"><span>${d.label}</span><strong>${Math.round((d.severity||0)*100)}%</strong></div>`).join('') + `</div>`
+            : '';
+    }
+
+    const fireInfo = document.getElementById('fire-info');
+    if (fireInfo) {
+        const fires = state.fires || [];
+        fireInfo.innerHTML = fires.length
+            ? fires.map(f => `<div class="metric"><span>🔥 ไฟ (เชื้อเพลิง ${f.fuel}kg)</span><strong>${f.temp}°C</strong></div>`).join('')
+            : 'ไม่มีกองไฟ';
+    }
+}
+
 // ---------- Animation Loop ----------
 let frame = 0;
 function drawLoop() {
@@ -229,7 +268,10 @@ function drawLoop() {
     zoom += (targetZoom - zoom) * 0.1;
 
     const container = canvas.parentElement;
-    if (container) { canvas.width = container.clientWidth; canvas.height = container.clientHeight; }
+    if (container) {
+        const w = container.clientWidth, h = container.clientHeight;
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = false;
@@ -256,7 +298,7 @@ function drawLoop() {
         }
     }
 
-    if (lastState.fire_spots) { for (const f of lastState.fire_spots) { const iso = cartesianToIso(f.x, f.y); drawFireSprite(ctx, iso.x, iso.y + TILE_HEIGHT/2, 12, frame); } }
+    if (lastState.fires) { for (const f of lastState.fires) { const iso = cartesianToIso(f.pos[1], f.pos[0]); drawFireSprite(ctx, iso.x, iso.y + TILE_HEIGHT/2, 12, frame); } }
     if (lastState.shelters) { for (const s of lastState.shelters) { const iso = cartesianToIso(s.pos[1], s.pos[0]); drawShelterSprite(ctx, iso.x, iso.y + TILE_HEIGHT/2, 20); } }
     if (lastState.humans) {
         for (const h of lastState.humans) {
@@ -307,6 +349,11 @@ window.addEventListener('load', () => {
     document.querySelectorAll('.lang-btn').forEach(btn => btn.onclick = () => setLanguage(btn.dataset.lang));
     document.querySelectorAll('.camera-btn').forEach(btn => btn.onclick = () => setCameraFocus(btn.dataset.focus));
     const pauseBtn = document.getElementById('pause-btn');
-    if (pauseBtn) pauseBtn.onclick = () => sendCmd('pause');
+    if (pauseBtn) pauseBtn.onclick = () => {
+        const paused = pauseBtn.dataset.paused === '1';
+        sendCmd(paused ? 'start' : 'pause');
+        pauseBtn.dataset.paused = paused ? '0' : '1';
+        pauseBtn.innerText = paused ? '⏸️ หยุด' : '▶️ เล่นต่อ';
+    };
     requestAnimationFrame(drawLoop);
 });

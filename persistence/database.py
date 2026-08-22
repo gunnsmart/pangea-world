@@ -22,12 +22,16 @@ def _get_pool():
     if _pool is None:
         with _pool_lock:
             if _pool is None:
+                connect_args = {}
+                is_local = any(h in DATABASE_URL for h in ("localhost", "127.0.0.1", "::1"))
+                if "sslmode=" not in DATABASE_URL and not is_local:
+                    connect_args["sslmode"] = "require"
                 try:
                     _pool = psycopg2.pool.ThreadedConnectionPool(
                         minconn=1,
                         maxconn=5,
                         dsn=DATABASE_URL,
-                        sslmode="require"
+                        **connect_args
                     )
                 except Exception as e:
                     print(f"[DB] Failed to create connection pool: {e}")
@@ -98,6 +102,14 @@ def init_db() -> bool:
                     event_text TEXT NOT NULL,
                     event_type VARCHAR(30) DEFAULT 'general',
                     logged_at TIMESTAMPTZ DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS language_lexicon (
+                    id SERIAL PRIMARY KEY,
+                    word VARCHAR(64) NOT NULL,
+                    meaning VARCHAR(64) NOT NULL,
+                    speaker VARCHAR(64),
+                    uses INTEGER DEFAULT 1,
+                    UNIQUE(word, speaker)
                 );
                 CREATE TABLE IF NOT EXISTS time_series (
                     id SERIAL PRIMARY KEY,
@@ -190,3 +202,42 @@ def record_timeseries(sim_day: int, fauna, biomass: float, co2: float, temp: flo
         execute_with_conn(_record)
     except Exception as e:
         print(f"[DB] timeseries error: {e}")
+
+
+def save_lexicon(entries):
+    """entries: list of dicts {word, meaning, speaker, uses}. Upserts lexicon."""
+    if not DATABASE_URL or not entries:
+        return False
+
+    def _save(conn):
+        with conn.cursor() as cur:
+            for e in entries:
+                cur.execute("""
+                    INSERT INTO language_lexicon (word, meaning, speaker, uses)
+                    VALUES (%s,%s,%s,%s)
+                    ON CONFLICT (word, speaker)
+                    DO UPDATE SET uses = EXCLUDED.uses, meaning = EXCLUDED.meaning
+                """, (e["word"], e["meaning"], e.get("speaker", ""), e.get("uses", 1)))
+        return True
+
+    try:
+        return execute_with_conn(_save) or False
+    except Exception as ex:
+        print(f"[DB] save_lexicon error: {ex}")
+        return False
+
+
+def load_lexicon():
+    if not DATABASE_URL:
+        return []
+
+    def _load(conn):
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("SELECT word, meaning, speaker, uses FROM language_lexicon")
+            return [dict(r) for r in cur.fetchall()]
+
+    try:
+        return execute_with_conn(_load) or []
+    except Exception as ex:
+        print(f"[DB] load_lexicon error: {ex}")
+        return []

@@ -1,4 +1,5 @@
 # systems/brain.py
+import copy
 import math
 import random
 from dataclasses import dataclass, field
@@ -223,6 +224,7 @@ class Brain:
         self.skill: Dict[str, float] = {"fire":0,"cook":0,"craft":0,"hunt":0,"gather":0}
         self.knows: Set[str] = set()
         self._drive_to_actions = DRIVE_TO_RELIEF
+        self.neural = None
 
     def _init_common_sense_weights(self):
         """แปลง common_sense dictionary ให้เป็น base_weights"""
@@ -242,12 +244,17 @@ class Brain:
                 self.base_weights[a] = 0.5 + (self.base_weights[a] - min_w) / range_w * 4.5
 
     def step(self, perception: Dict) -> str:
-        self.day += 1
+        hour = perception.get("hour", 12)
+        prev_hour = getattr(self, "_prev_hour", hour)
+        if hour < prev_hour:
+            self.day += 1
+        self._prev_hour = hour
         pain = self.drives.step(
             temp_c=perception.get("temp_c",28),
-            hour=perception.get("hour",12),
+            hour=hour,
             partner_dist=perception.get("partner_dist",99),
             danger=perception.get("danger",False),
+            has_shelter=perception.get("has_shelter",False),
         )
         if perception.get("partner_dist",99) <= 3:
             self.emotion.update("partner_near", 0.08)
@@ -273,6 +280,29 @@ class Brain:
         self.current_context = "+".join(ctx) if ctx else "normal"
 
         scores = self._compute_scores(pain, perception)
+
+        if self.neural is None:
+            try:
+                from systems.neural_brain import NeuralBrain
+                self.neural = NeuralBrain(self.name, seed_offset=self.day)
+            except Exception:
+                self.neural = False
+        if self.neural:
+            try:
+                x = self.neural.encode(perception, pain, self.skill, sorted(self.knows))
+                out44, modules = self.neural.forward(x)
+                bonus = self.neural.map_action_bonus(out44)
+                vals = np.array(list(bonus.values()))
+                std = vals.std()
+                if std > 1e-6:
+                    mean = vals.mean()
+                    scale = 1.5 * (0.6 + 0.4 * self.emotion.exploration_bias)
+                    for a in ACTIONS:
+                        if scores[a] > 0.01 and a in bonus:
+                            scores[a] += scale * (bonus[a] - mean) / std
+            except Exception:
+                pass
+
         action = self._softmax_sample(scores)
         self.current_action = action
 
@@ -352,7 +382,7 @@ class Brain:
                binder.material.template.name if binder else None)
         if key in self.craft_recipes:
             # เคยคราฟต์สำเร็จแล้ว ใช้เลย
-            return self.craft_recipes[key]
+            return copy.copy(self.craft_recipes[key])
 
         # ทดลองสุ่มผสม
         new_item = combine_items(item_a, item_b, binder)
@@ -385,8 +415,8 @@ class Brain:
 
     def observe_craft(self, recipe_key, outcome):
         """เรียนรู้จากการสังเกตคู่ครองคราฟต์สำเร็จ"""
-        if outcome > 0.5 and recipe_key not in self.craft_recipes:
-            self.craft_recipes[recipe_key] = outcome  # จำว่าสูตรนี้ดี
+        if outcome > 0.5:
+            self.craft_outcomes[recipe_key] = max(outcome, self.craft_outcomes.get(recipe_key, 0))
             self.memory.store(self.day, "learn_craft", str(recipe_key), outcome)
 
     def select_items_for_craft(self, inventory):
@@ -403,9 +433,7 @@ class Brain:
 
     def _is_feasible(self, action: str, perc: Dict, inv: List, pain: Dict) -> bool:
         if action == "rub":
-            # ต้องมีของสองชิ้นที่มีความแข็ง > 5 (หินหรือกระดูก)
-            items = [i for i in inv if hasattr(i, 'attrs') and i.attrs.get("hardness", 0) > 5]
-            return len(items) >= 2
+            return perc.get("can_rub", False)
         if action == "sleep":
             return pain.get("tired",0) > 0.3 or perc.get("is_night",False)
         if action == "eat_raw":
@@ -415,11 +443,11 @@ class Brain:
         if action == "drink":
             return perc.get("has_water", False)
         if action == "start_fire":
-            return ("หินเหล็กไฟ" in inv and "กิ่งไม้แห้ง" in inv and not perc.get("has_fire",False))
+            return perc.get("has_flint", False) and perc.get("has_wood_item", False) and not perc.get("has_fire",False)
         if action == "cook":
             return perc.get("has_fire", False)
         if action == "tend_fire":
-            return perc.get("has_fire", False) and "กิ่งไม้แห้ง" in inv
+            return perc.get("has_fire", False) and perc.get("has_wood_item", False)
         if action == "craft":
             return len(inv) >= 2
         if action == "mate":
@@ -431,17 +459,12 @@ class Brain:
         if action == "teach":
             return perc.get("has_child_nearby", False) and len(self.knows) > 0
         if action == "share_food":
-            # ต้องมีอาหารในตัวและคู่หูอยู่ใกล้
-            has_food = any(hasattr(i, 'attrs') and i.attrs.get("flammable", 0) > 0 for i in inv) # simplified check for food
-            return has_food and perc.get("partner_dist", 99) <= 3
+            return perc.get("has_cooked_food", False) and perc.get("partner_dist", 99) <= 3
         if action == "comfort":
             # คู่หูต้องอยู่ใกล้และมีความกลัวหรือความเหงาสูง
             return perc.get("partner_dist", 99) <= 3 and (perc.get("partner_fear", 0) > 0.3 or perc.get("partner_lonely", 0) > 0.3)
         if action == "build_shelter":
-            # ต้องมีทรัพยากร (กิ่งไม้และใบไม้)
-            has_wood = any(hasattr(i, 'attrs') and i.material.template.name == "wood" for i in inv)
-            has_leaf = any(hasattr(i, 'attrs') and i.material.template.name == "leaf" for i in inv)
-            return has_wood and has_leaf and not perc.get("has_shelter", False)
+            return perc.get("has_wood_item", False) and perc.get("has_leaf_item", False) and not perc.get("has_shelter", False)
         return True
 
     def learn(self, action: str, outcome: float, detail: str = ""):
@@ -470,6 +493,19 @@ class Brain:
         self.action_log.append(entry)
         if len(self.action_log) > 30:
             self.action_log.pop(0)
+
+        if getattr(self, "neural", False):
+            try:
+                self.neural.reinforce(action, max(-2.0, min(2.0, outcome)))
+            except Exception:
+                pass
+
+    def dream_consolidation(self):
+        if getattr(self, "neural", False):
+            try:
+                self.neural.dream(1.0)
+            except Exception:
+                pass
 
     def receive_pain(self, source: str, intensity: float):
         self.learn(self.current_action, -intensity, f"pain:{source}")

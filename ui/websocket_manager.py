@@ -6,7 +6,10 @@ from fastapi import WebSocket
 class WebSocketManager:
     def __init__(self):
         self.connections: Set[WebSocket] = set()
-        self.loop = asyncio.get_event_loop()
+        try:
+            self.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.loop = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -16,19 +19,18 @@ class WebSocketManager:
         self.connections.discard(websocket)
 
     def broadcast(self, snapshot: dict):
-        """Thread-safe broadcast with removal of dead connections"""
+        """Thread-safe fire-and-forget broadcast; never blocks the sim thread."""
+        if not self.loop or not self.connections:
+            return
         message = json.dumps({"type": "full", "data": snapshot})
-        to_remove = set()
 
         for ws in list(self.connections):   # iterate over a copy
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    ws.send_text(message),
-                    self.loop
-                ).result(timeout=1.0)
-            except Exception:
-                # Connection likely dead, mark for removal
-                to_remove.add(ws)
+            future = asyncio.run_coroutine_threadsafe(ws.send_text(message), self.loop)
 
-        # Remove dead connections
-        self.connections -= to_remove
+            def _done(fut, socket=ws):
+                try:
+                    fut.result()
+                except Exception:
+                    self.connections.discard(socket)
+
+            future.add_done_callback(_done)

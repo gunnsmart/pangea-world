@@ -5,3 +5,8 @@ venv/
 .vscode/
 .idea/
 *.db
+node_modules/
+*.log
+.pytest_cache/
+ui/console-dist/
+console/dist/

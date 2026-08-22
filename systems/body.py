@@ -14,12 +14,13 @@ class Hormone:
     oxytocin: float = 0.0
 
 class Body:
-    def __init__(self, name: str, sex: str, mass: float, height: float, time_scale: float = 1.0):
+    def __init__(self, name: str, sex: str, mass: float, height: float,
+                 time_scale: float = 1.0, age_days: float = None):
         self.name = name
         self.sex = sex
         self.mass = mass
         self.height = height
-        self.age = 25 * 365
+        self.age = age_days if age_days is not None else 25 * 365
         self.time_scale = time_scale
 
         self.position = np.array([0.0,0.0,0.0])
@@ -68,6 +69,7 @@ class Body:
         self.recovery_days = 0
         self.total_births = 0
         self.diseases: List[str] = []
+        self.pending_newborn = None
 
     @property
     def age_years(self) -> float:
@@ -79,6 +81,8 @@ class Body:
             return []
         events = []
         self.age += 1
+        if self.recovery_days > 0:
+            self.recovery_days -= 1
 
         bmr = self._calc_bmr()
         activity_cost = bmr * 0.3 if is_active else 0
@@ -180,6 +184,7 @@ class Body:
         self.hormone.oxytocin = min(100, self.hormone.oxytocin + 30)
         has_food = self.u_energy > 500
         survived = random.random() < (0.75 if has_food else 0.45)
+        self.pending_newborn = {"survived": survived}
         if survived:
             sex_baby = random.choice(["👦 ชาย","👧 หญิง"])
             events.append(f"👶 {self.name} คลอดทารก{sex_baby} สำเร็จ!")
